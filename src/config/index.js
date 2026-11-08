@@ -32,5 +32,6 @@ module.exports = {
 
   // AGY CLI settings
   AGY_BIN: process.env.AGY_BIN || '/home/pluto/.local/bin/agy',
+  AGY_MODEL: process.env.AGY_MODEL || 'gemini-3.8-flash-low',
   AGY_TIMEOUT_MS: parseInt(process.env.AGY_TIMEOUT_MS || '90000', 10),
 };

@@ -193,9 +193,11 @@ ${historyTranscript}
       ? `${systemEnvelope}\n\n[GENERATE_PRD]`
       : `${systemEnvelope}\n\n${userSafeWrappedPrompt}`;
 
-    // Use --effort low for fast, snappy conversational responses
+    // Use Gemini Flash (--model gemini-3.8-flash-low) and --effort low for ultra-fast conversational responses
     const args = [
       '--sandbox',
+      '--model',
+      config.AGY_MODEL,
       '--effort',
       'low',
       '--disable-slash-commands',
@@ -389,6 +391,7 @@ ${devPoints}
     return {
       sandboxDir: config.SANDBOX_DIR,
       agyBin: config.AGY_BIN,
+      model: config.AGY_MODEL,
       effort: 'low',
       activeProcesses: active
     };

@@ -57,6 +57,7 @@
   }
 
   const PERSONA_LABELS = {
+    adaptive_smart: '🔄 متكيف ذكي مع طبيعة العميل (Dynamic Adaptive)',
     friendly_consultant: '🤝 مستشار ودود (Friendly Consultant)',
     concise_direct: '⚡ مختصر ومباشر (Concise & Direct)',
     technical_analyst: '🧠 محلل تقني (Technical Analyst)'

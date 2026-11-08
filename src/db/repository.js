@@ -15,6 +15,30 @@ function normalizeArabicJeem(text) {
   return text.replace(/\u0669/g, 'ج');
 }
 
+/**
+ * Builds a context-aware, personalized welcome message that immediately reflects
+ * the Admin's Custom Instructions & Recommendations so the client never receives
+ * a generic or ignorant greeting.
+ */
+function buildContextAwareWelcomeMessage({ clientName, projectName, customInstructions, persona }) {
+  const cleanClient = normalizeArabicJeem(clientName || '');
+  const cleanProject = normalizeArabicJeem(projectName || '');
+  const cleanContext = normalizeArabicJeem((customInstructions || '').trim());
+
+  if (cleanContext) {
+    if (persona === 'concise_direct') {
+      return `مرحباً بك يا **${cleanClient}** في جلسة تحديد متطلبات **${cleanProject}**! ⚡\n\nلقد اطلعت على السياق الأولي لمشروعك: **(${cleanContext})**.\n\n**للبدء مباشرة:** كيف يسير العمل حالياً في هذه النقطة تحديداً، وما هي أهم أولوية تود حسمها أولاً؟`;
+    }
+    if (persona === 'technical_analyst') {
+      return `أهلاً بك يا **${cleanClient}** في جلسة التحليل الفني لمشروع **${cleanProject}**! 📊\n\nبناءً على المعطيات الأولية المسجلة لدينا حول المشروع:\n> ${cleanContext}\n\n**سؤالي الأول لضبط هيكلة النظام:** ما هي الأدوار ( الصلاحيات ) الأساسية للمستخدمين وكيف تتدفق العمليات اليومية بينهم؟`;
+    }
+    // Default: adaptive / friendly consultant
+    return `أهلاً بك يا **${cleanClient}** في جلسة استكشاف متطلبات مشروع **${cleanProject}**! 🚀\n\nلدي فكرة أولية عن طبيعة مشروعك (${cleanContext})، وأنا هنا لمساعدتك خطوة بخطوة وبأسلوب يناسبك لتفصيل كل ما تحتاجه بدقة (ويمكنك أيضاً إرفاق أي صور أو توضيحات في أي وقت).\n\n**للبدء من واقع عملك:** كيف تدار الأمور لديكم حالياً، وما هي أكثر نقطة تريد أن يسهلها عليك النظام الجديد؟`;
+  }
+
+  return `أهلاً بك يا **${cleanClient}** في جلسة استكشاف متطلبات مشروع **${cleanProject}**! 🚀\n\nأنا مستشار تحليل الأعمال الذكي في **Gapless**. سأساعدك خطوة بخطوة وبأسلوب بسيط ومباشر لتحديد كافة تفاصيل مشروعك.\n\n**للبدء:** هل يمكنك إعطائي فكرة سريعة بكلماتك الخاصة عن طبيعة عملك وما الذي تريد أن يحققه لك هذا النظام؟`;
+}
+
 const PinRepo = {
   getAll() {
     return db.prepare(`
@@ -34,7 +58,7 @@ const PinRepo = {
     return db.prepare('SELECT * FROM pins WHERE pin = ?').get(pinCode);
   },
 
-  create({ pin, client_name, project_name, custom_instructions = '', persona = 'friendly_consultant' }) {
+  create({ pin, client_name, project_name, custom_instructions = '', persona = 'adaptive_smart' }) {
     const id = `pin-${uuidv4().slice(0, 8)}`;
     const now = Date.now();
     const cleanClient = normalizeArabicJeem(client_name.trim());
@@ -46,8 +70,13 @@ const PinRepo = {
       VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)
     `).run(id, pin, cleanClient, cleanProject, cleanInstructions, persona, now, now);
 
-    // Seed welcome message for this PIN
-    const welcomeContent = `أهلاً بك يا **${cleanClient}** في جلسة استكشاف متطلبات مشروع **${cleanProject}**! 🚀\n\nأنا مستشار تحليل الأعمال الذكي في **Gapless**. سأساعدك خطوة بخطوة لاكتشاف كافة التفاصيل والزوايا المخفية لمشروعك.\n\nيمكنك التحدث معي أو إرفاق صور ورسومات تخطيطية (Wireframes / Sketches) لمناقشتها.\n\n**للبدء:** هل يمكنك إعطائي فكرة موجزة عن الهدف الرئيسي للمشروع ومن هم المستخدمون الأساسيون؟`;
+    // Seed context-aware welcome message for this PIN
+    const welcomeContent = buildContextAwareWelcomeMessage({
+      clientName: cleanClient,
+      projectName: cleanProject,
+      customInstructions: cleanInstructions,
+      persona
+    });
 
     MessageRepo.create({
       pin_id: id,
@@ -76,6 +105,19 @@ const PinRepo = {
       SET pin = ?, client_name = ?, project_name = ?, custom_instructions = ?, persona = ?, status = ?, updated_at = ?
       WHERE id = ?
     `).run(updatedPin, updatedClient, updatedProject, updatedInstructions, updatedPersona, updatedStatus, now, id);
+
+    // If the session only has the initial welcome message (no client messages yet),
+    // automatically refresh the welcome message so it reflects the updated Admin instructions!
+    const msgs = MessageRepo.getByPinId(id, false);
+    if (msgs.length === 1 && msgs[0].sender === 'ai') {
+      const updatedWelcome = buildContextAwareWelcomeMessage({
+        clientName: updatedClient,
+        projectName: updatedProject,
+        customInstructions: updatedInstructions,
+        persona: updatedPersona
+      });
+      db.prepare('UPDATE messages SET content = ? WHERE id = ?').run(updatedWelcome, msgs[0].id);
+    }
 
     return this.getById(id);
   },
@@ -276,5 +318,6 @@ module.exports = {
   MessageRepo,
   RateLimitRepo,
   SecurityEventRepo,
-  normalizeArabicJeem
+  normalizeArabicJeem,
+  buildContextAwareWelcomeMessage
 };

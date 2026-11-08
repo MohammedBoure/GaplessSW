@@ -19,6 +19,7 @@
   const refreshSessionsBtn = document.getElementById('refreshSessionsBtn');
   const activeSessionHeaderTitle = document.getElementById('activeSessionHeaderTitle');
   const activeSessionHeaderMeta = document.getElementById('activeSessionHeaderMeta');
+  const resetSessionChatBtn = document.getElementById('resetSessionChatBtn');
   const generatePrdBtn = document.getElementById('generatePrdBtn');
 
   const devChatStream = document.getElementById('devChatStream');
@@ -201,6 +202,7 @@
       activeSessionHeaderMeta.textContent = `التوجيه الإداري: ${normalizeTextJeem(s.custom_instructions || 'افتراضي')} | الشخصية: ${s.persona}`;
 
       generatePrdBtn.disabled = false;
+      if (resetSessionChatBtn) resetSessionChatBtn.disabled = false;
       copilotInput.disabled = false;
       copilotSubmitBtn.disabled = false;
 
@@ -370,6 +372,21 @@
     prdViewerContainer.innerHTML = formatMarkdownRich(currentPrdMarkdown);
     copyPrdBtn.disabled = false;
     downloadPrdBtn.disabled = false;
+  }
+
+  if (resetSessionChatBtn) {
+    resetSessionChatBtn.addEventListener('click', async () => {
+      if (!selectedPinId) return;
+      if (!confirm('هل تريد مسح المحادثة الحالية وإعادة توليد رسالة الترحيب الذكية بناءً على معلومات العميل الأولية؟')) return;
+      const res = await fetch(`/api/admin/pins/${encodeURIComponent(selectedPinId)}/reset-chat`, {
+        method: 'POST',
+        headers: authHeaders()
+      });
+      if (res.ok) {
+        await selectSession(selectedPinId);
+        await loadSessions();
+      }
+    });
   }
 
   generatePrdBtn.addEventListener('click', async () => {

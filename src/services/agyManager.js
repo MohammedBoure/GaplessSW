@@ -2,12 +2,12 @@
  * `agy` Engine & Discovery Process Manager
  *
  * Spawns and manages `agy` CLI invocations per active client session with:
+ * - Fast low-latency reasoning effort (`--effort low`) for instant conversational responses
  * - Strict sandbox mode (`--sandbox`)
  * - Disabled slash commands (`--disable-slash-commands`)
  * - Assigned `conversation_id` (`--conversation <id>`)
- * - Combined system instructions (Mandatory Guardrail + ScopeMaster Persona + Admin Custom Notes + Secret Dev Notes)
- * - Visual inspection support when media files (sketches, screenshots, wireframes) are attached
- * - One-Click PRD compilation (`[GENERATE_PRD]`)
+ * - Dynamic Client-Adaptive Tone & Persona (adapts automatically to the client's vocabulary, dialect, and technical level)
+ * - Strict Zero-Hallucination & Grounded PRD compilation (`[GENERATE_PRD]`)
  */
 const { spawn } = require('child_process');
 const path = require('path');
@@ -18,19 +18,27 @@ const { MANDATORY_GUARDRAIL_STATEMENT, ensureSandboxEnvironment } = require('../
 // Ensure sandbox directory & PreToolUse hook exist
 ensureSandboxEnvironment();
 
-// Persona descriptions
+// Persona descriptions with dynamic client-adaptation instructions
 const PERSONA_GUIDES = {
+  adaptive_smart: {
+    label: 'متكيف ذكي مع طبيعة العميل (Dynamic Client-Adaptive)',
+    prompt: `Style & Tone (DYNAMICALLY ADAPTIVE TO THE CLIENT):
+- Mirror and adapt dynamically to the client's personality, message length, dialect/language, and technical level in every turn.
+- If the client is a store owner, merchant, or non-technical user who writes briefly or uses colloquial/practical terms: speak in a warm, ultra-clear, practical, everyday business style with zero technical jargon.
+- If the client is hurried or writes very short replies: keep your replies short, direct, and effortless to answer.
+- If the client uses technical terminology: match their technical depth smoothly.`
+  },
   friendly_consultant: {
-    label: 'مستشار ودود (Friendly Consultant)',
-    prompt: `Style & Tone: Warm, encouraging, collaborative, and jargon-free business consultant. Explain technical concepts simply using everyday analogies. Make the client feel excited and supported while gently uncovering missing requirements.`
+    label: 'مستشار ودود ومتكيف (Friendly & Adaptive Consultant)',
+    prompt: `Style & Tone: Warm, encouraging, practical, and dynamically adapted to the client's nature. Speak the client's language (practical merchant/business talk rather than stiff academic phrasing). Keep sentences natural, clear, and concise.`
   },
   concise_direct: {
     label: 'مختصر ومباشر (Concise & Direct)',
-    prompt: `Style & Tone: Crisp, executive, structured, and time-efficient. Use short bullet points, avoid fluff, and go straight to the high-impact business and operational questions.`
+    prompt: `Style & Tone: Crisp, executive, ultra-short, and time-efficient. Avoid long introductions or repetitive praise; go straight to the practical point in 2-3 short lines.`
   },
   technical_analyst: {
     label: 'محلل تقني (Technical Systems Analyst)',
-    prompt: `Style & Tone: Precise, architectural, and analytical product engineer. Focus deeply on data models, API integrations, edge cases, permissions matrices, security compliance, and scalability constraints.`
+    prompt: `Style & Tone: Precise, structured, and analytical, while still adapting to how much detail the client provides.`
   }
 };
 
@@ -46,10 +54,10 @@ class AgySessionManager {
    * Builds the full ScopeMaster system instruction block for `agy`.
    */
   buildSystemEnvelope({ pinRecord, devNotes = [], mediaPath = null, isPrdGeneration = false, flaggedInput = false, flagReasons = [] }) {
-    const personaInfo = PERSONA_GUIDES[pinRecord.persona] || PERSONA_GUIDES.friendly_consultant;
+    const personaInfo = PERSONA_GUIDES[pinRecord.persona] || PERSONA_GUIDES.adaptive_smart;
 
-    // Include recent conversation history summary in case conversation_id is fresh or needs grounding
-    const recentMessages = MessageRepo.getByPinId(pinRecord.id, false).slice(-12);
+    // Include conversation history
+    const recentMessages = MessageRepo.getByPinId(pinRecord.id, false).slice(-16);
     const historyTranscript = recentMessages
       .map((m) => {
         const roleLabel = m.sender === 'client' ? `Client (${pinRecord.client_name})` : 'ScopeMaster AI';
@@ -84,25 +92,29 @@ ${MANDATORY_GUARDRAIL_STATEMENT}
 You are "ScopeMaster" inside the Gapless platform.
 Client Name: ${pinRecord.client_name}
 Project Name: ${pinRecord.project_name}
-Admin Custom Context: ${pinRecord.custom_instructions || 'None specified.'}
-${personaInfo.prompt}
+Admin Initial Context & Notes: ${pinRecord.custom_instructions || 'None specified.'}
 
-### Recent Session Transcript:
+### Conversation Transcript:
 ${historyTranscript}
 
 ${devNotesBlock}
 
-### TASK: [GENERATE_PRD]
-Compile a comprehensive, production-grade, structured Product Requirements Document (PRD) in clear Arabic (with technical terms in English where helpful) based on everything discussed so far and the Admin Custom Context.
-Structure the PRD with the following Markdown sections:
-1. **ملخص المشروع والرؤية (Executive Summary & Vision)**
-2. **الأدوار والصلاحيات (User Roles & Permissions Matrix)**
-3. **المتطلبات الوظيفية الأساسية (Core Functional Requirements & User Stories)**
-4. **تحليل الواجهات وتجربة المستخدم (UI/UX & Wireframe Insights)**
-5. **التكاملات الخارجية وطرق الدفع/الخدمات (External Integrations & Local Services)**
-6. **الحالات الحدية والأمان (Edge Cases, Validation & Security)**
-7. **نطاق النسخة الأولية ومراحل الإطلاق (MVP Scope vs. Future Phases)**
-8. **النقاط المفتوحة والتوصيات (Open Questions & Analyst Recommendations)**
+### TASK: [GENERATE_PRD] — STRICT ZERO-HALLUCINATION POLICY
+Compile a structured Product Requirements Document (PRD) in clear Arabic based ONLY on:
+1. Facts explicitly stated by the client in the Conversation Transcript.
+2. Facts explicitly provided in the Admin Initial Context & Notes or Developer Notes.
+
+CRITICAL ANTI-HALLUCINATION RULES FOR PRD:
+- **DO NOT INVENT OR ASSUME DETAILS** that the client has not stated yet! (For example, do not invent specific product categories, payment methods, or workflows unless the client or admin explicitly mentioned them).
+- Clearly separate **Confirmed Facts (المعطيات المؤكدة)** from **Suggested Options / Unconfirmed Questions (نقاط مقترحة أو قيد الاستكشاف لم يحسمها العميل بعد)**.
+- If the conversation is still early, keep the confirmed sections concise and faithful to what was actually said, and list the remaining architectural/functional items under "أسئلة ونقاط لم يبت فيها العميل بعد (Pending Discovery)".
+
+Structure the PRD with these Markdown sections:
+1. **ملخص المشروع والمعطيات المؤكدة (Confirmed Project Summary)** — Only what the Admin & Client explicitly stated.
+2. **المتطلبات الوظيفية المؤكدة حتى الآن (Confirmed Requirements So Far)** — Strictly what was agreed upon in chat.
+3. **الأدوار وطريقة العمل (User Roles & Workflow)** — State what is confirmed vs. what still needs confirmation.
+4. **مقترحات تقنية وتنظيمية قابلة للنقاش (Suggested Recommendations - Not Yet Confirmed by Client)** — Clearly labeled as suggestions.
+5. **الأسئلة والنقاط المتبقية لاستكمال التحليل (Open Questions & Missing Scope)** — Specific items still needed from the client.
 </SYSTEM_INSTRUCTION>
 `.trim();
     }
@@ -111,20 +123,22 @@ Structure the PRD with the following Markdown sections:
 <SYSTEM_INSTRUCTION>
 ${MANDATORY_GUARDRAIL_STATEMENT}
 
-You are "ScopeMaster", the senior AI Requirements Discovery Consultant for the "Gapless" platform.
+You are "ScopeMaster", the intelligent Requirements Discovery Consultant for "Gapless".
 Client Name: ${pinRecord.client_name}
 Project Name: ${pinRecord.project_name}
-Admin Custom Context & Recommendations for this PIN:
+
+### MANDATORY ADMIN BACKGROUND CONTEXT (ALREADY KNOWN TO YOU):
 "${pinRecord.custom_instructions || 'Discover core functional requirements, target users, MVP scope, and edge cases.'}"
 
-Persona Configuration (${personaInfo.label}):
+### Persona & Dynamic Adaptation Rules (${personaInfo.label}):
 ${personaInfo.prompt}
 
-### Discovery Methodology Rules:
-1. Respond primarily in natural, professional Arabic (unless the client explicitly writes in another language, in which case match their language). Always use the letter "ج" properly.
-2. Guide the conversation gently: Ask ** ONLY 1 to 2 focused questions at a time** so the client on mobile is never overwhelmed.
-3. Proactively uncover blind spots: user roles, edge cases, failure modes, external integrations (e.g., payment gateways, notifications, maps), scale expectations, and MVP boundaries.
-4. Actively incorporate the Admin's Custom Context & Recommendations naturally into your discovery flow.
+### CRITICAL CONVERSATION & ANTI-HALLUCINATION RULES:
+1. **RESPECT PRE-EXISTING CONTEXT**: You ALREADY know the Admin Background Context above. NEVER ask generic "what is your project about?" questions if the Admin Context already tells you what the project is! Build directly on those known facts from the very first turn.
+2. **DYNAMICALLY ADAPT YOUR TONE TO THE CLIENT**: Observe how "${pinRecord.client_name}" writes. Match their simplicity, energy, and directness. Avoid robotic, overly long, or lecturing paragraphs. Keep your response concise, friendly, and natural.
+3. **DO NOT INVENT OR HALLUCINATE DETAILS**: Never assume or state details the client hasn't mentioned (e.g., do not invent specific examples or assume how their business works as if it were a fact). Instead, ask open, simple questions to let the client tell you.
+4. **ASK ONLY 1 TO 2 SHORT, EASY QUESTIONS AT A TIME**: Make it effortless for the client to reply on mobile.
+5. **ARABIC TYPOGRAPHY**: Always use the letter "ج" properly.
 ${devNotesBlock}${mediaBlock}${securityWarningBlock}
 ### Recent Conversation Context:
 ${historyTranscript}
@@ -179,8 +193,11 @@ ${historyTranscript}
       ? `${systemEnvelope}\n\n[GENERATE_PRD]`
       : `${systemEnvelope}\n\n${userSafeWrappedPrompt}`;
 
+    // Use --effort low for fast, snappy conversational responses
     const args = [
       '--sandbox',
+      '--effort',
+      'low',
       '--disable-slash-commands',
       '--output-format',
       'json',
@@ -208,7 +225,7 @@ ${historyTranscript}
       return {
         response: cleanResponse,
         conversationId: result.conversation_id || pinRecord.conversation_id,
-        engine: 'agy-cli-sandbox',
+        engine: 'agy-cli-sandbox-low',
         usage: result.usage || null
       };
     } catch (err) {
@@ -301,99 +318,67 @@ ${historyTranscript}
   }
 
   /**
-   * High-availability structured response generator if the external model API is unreachable or times out,
-   * ensuring zero downtime during live client sessions or automated testing.
+   * High-availability structured response generator if the external model API is unreachable or times out.
+   * Strictly grounded in actual Admin instructions and Client messages without inventing unconfirmed details.
    */
   _buildIntelligentConsultantFallback({ pinRecord, pendingDevNotes, mediaPath, isPrdGeneration, flaggedInput }) {
     const messages = MessageRepo.getByPinId(pinRecord.id, false);
 
     if (flaggedInput) {
-      return `عذراً يا **${pinRecord.client_name}**، أنا مستشار مخصص فقط لتحليل واستكشاف متطلبات مشروع **${pinRecord.project_name}**، ولا يمكنني تنفيذ أي أوامر برمجية أو عمليات على النظام. 🔒\n\nدعنا نعود لتفاصيل مشروعك: ما هي أهم ميزة تود أن نركز عليها في النسخة الأولية (MVP)؟`;
+      return `عذراً يا **${pinRecord.client_name}**، أنا مستشار مخصص فقط لتحليل متطلبات مشروع **${pinRecord.project_name}**، ولا يمكنني تنفيذ أي أوامر برمجية أو عمليات على النظام. 🔒\n\nدعنا نعود لتفاصيل مشروعك: ما هي أهم أولوية تود التركيز عليها؟`;
     }
 
     if (isPrdGeneration) {
       const clientMsgs = messages.filter((m) => m.sender === 'client');
       const devNotesAll = MessageRepo.getAllDevNotes(pinRecord.id);
       const clientPoints = clientMsgs.length > 0
-        ? clientMsgs.map((m, i) => `${i + 1}. ${m.content}`).join('\n')
-        : '- لم يتم إدخال تفاصيل إضافية بعد من العميل.';
+        ? clientMsgs.map((m, i) => `${i + 1}. "${m.content}"`).join('\n')
+        : '- لم يقم العميل بإضافة تفاصيل إضافية في المحادثة بعد.';
 
       const devPoints = devNotesAll.length > 0
         ? devNotesAll.map((n, i) => `${i + 1}. ${n.content}`).join('\n')
-        : '- لا توجد ملاحظات إضافية من فريق التطوير.';
+        : '- لا توجد ملاحظات إضافية من المطور.';
 
       return `# وثيقة متطلبات المنتج (PRD) — ${pinRecord.project_name}
 
 **العميل:** ${pinRecord.client_name}  
 **رمز الجلسة (PIN):** \`${pinRecord.pin}\`  
-**الشخصية الاستشارية:** ${pinRecord.persona}  
 **تاريخ التوليد:** ${new Date().toLocaleString('ar-DZ')}
 
 ---
 
-## 1. ملخص المشروع والرؤية (Executive Summary & Vision)
-يهدف مشروع **${pinRecord.project_name}** الخاص بالعميل **${pinRecord.client_name}** إلى تقديم حل رقمي متكامل يركز على سهولة الاستخدام، الموثوقية العالية، وتلبية احتياجات السوق المستهدف بكفاءة.
-
-### التوجيهات الإدارية الخاصة بالمشروع:
-> ${pinRecord.custom_instructions || 'التركيز على المتطلبات الأساسية للنسخة الأولية (MVP) وتجربة المستخدم.'}
+## 1. المعطيات المؤكدة من الإدارة (Confirmed Initial Context)
+> ${pinRecord.custom_instructions || 'لم يتم تحديد سياق أولي خاص.'}
 
 ---
 
-## 2. مدخلات العميل وملاحظات الجلسة (Captured Client Inputs)
+## 2. ما ذكره العميل فعلياً في المحادثة (Confirmed Client Statements Only)
 ${clientPoints}
 
 ---
 
-## 3. الأدوار والصلاحيات (User Roles & Permissions)
-- **المستخدم النهائي (العميل/المستفيد):** التسجيل، تصفح الخدمات، إتمام الطلبات/الحجوزات، ومتابعة الإشعارات الفورية.
-- **مزود الخدمة / الموظف التشغيلي:** إدارة الطلبات الواردة، تحديث الحالات في الوقت الفعلي، والتواصل الموجه.
-- **مدير النظام (Super Admin):** لوحة تحكم شاملة لإدارة المستخدمين، التقارير المالية، الصلاحيات، والإعدادات العامة.
-
----
-
-## 4. التكاملات الخارجية والمدفوعات (External Integrations)
-- بوابات الدفع المحلية والإلكترونية المتوافقة مع السوق المستهدف (بما في ذلك الدفع عند الاستلام أو البطاقات البنكية المحلية).
-- نظام إشعارات متعدد القنوات (Push Notifications / SMS / WhatsApp).
-- خدمات الخرائط وتحديد المواقع (في حال تطلب سير العمل التوصيل أو العناوين).
-
----
-
-## 5. الحالات الحدية والأمان (Edge Cases & Security Requirements)
-- معالجة انقطاع الاتصال بالإنترنت أثناء إرسال الطلب ومنع تكرار العمليات (Idempotency).
-- حماية البيانات الشخصية وتشفير الجلسات والتحقق عبر رمز تحقق (OTP).
-- آليات الإلغاء، الاسترجاع، وحل النزاعات.
-
----
-
-## 6. ملاحظات المطورين السرية المدمجة (Developer Co-Pilot Directives)
+## 3. توجيهات وملاحظات المطور (Developer Co-Pilot Notes)
 ${devPoints}
 
 ---
 
-## 7. نطاق النسخة الأولية (MVP Scope & Next Steps)
-1. اعتماد تدفق المستخدم الأساسي (Core Happy Path) وتجميد متطلبات المرحلة الأولى.
-2. بناء النماذج التفاعلية (High-Fidelity Wireframes) بناءً على الملاحظات المرفقة.
-3. البدء بتطوير الواجهات البرمجية (APIs) وتطبيق الهاتف المحمول.`;
+## 4. نقاط وأسئلة قيد الاستكشاف (Pending Discovery — لم يحسمها العميل بعد)
+- تحديد التقسيم الدقيق لصلاحيات المستخدمين الذين سيتعاملون مع النظام يومياً.
+- تحديد سير العمل اليومي بالتفصيل والعمليات الأساسية المطلوبة في النسخة الأولية (MVP).
+- معرفة ما إذا كانت هناك أجهزة خاصة (مثل قارئ الباركود، طابعات الفواتير، أو الهواتف) سيتم استخدامها.`;
     }
 
     if (mediaPath) {
       const fileName = path.basename(mediaPath);
-      return `شكراً لإرفاق الصورة (\`${fileName}\`)! 🖼️ لقد قمت بفحص التصميم المرفق لمشروع **${pinRecord.project_name}**.\n\nلضمان عدم وجود أي فجوات في المتطلبات حول هذه الشاشة:\n1. **الحالات الاستثنائية:** ماذا يجب أن يظهر للمستخدم في هذه الشاشة إذا كانت البيانات فارغة (Empty State) أو حدث خطأ في الاتصال؟\n2. **الصلاحيات والإجراءات:** هل كل المستخدمين يرون نفس الأزرار الظاهرة في الصورة أم تختلف حسب نوع الحساب؟`;
+      return `شكراً لإرفاق الصورة (\`${fileName}\`)! 🖼️\n\nبخصوص هذا المرفق لمشروع **${pinRecord.project_name}**:\n1. ما هي أهم نقطة في هذه الصورة تود أن نعتمدها كما هي؟\n2. وهل هناك أي تعديل تريده عليها ليتناسب مع طريقة عملك؟`;
     }
 
     if (pendingDevNotes && pendingDevNotes.length > 0) {
       const latestNote = pendingDevNotes[pendingDevNotes.length - 1].content;
-      return `نقطة ممتازة وواضحة يا **${pinRecord.client_name}**! 👍\n\nوبالبناء على ما ذكرته لمشروع **${pinRecord.project_name}**، أود التعمق في جانب مهم:\n- **استفسار محوري:** بخصوص (${latestNote})، كيف تتصور آلية عملها المثالية بالنسبة للمستخدم النهائي وما هي القيود المتوقعة فيها؟`;
+      return `تمام يا **${pinRecord.client_name}**! 👍\n\nلدي استفسار سريع بخصوص **${pinRecord.project_name}**:\n- بالنسبة لـ (${latestNote})، كيف تفضل أن تدار هذه النقطة في عملك اليومي؟`;
     }
 
-    const turnCount = messages.filter((m) => m.sender === 'client').length;
-    if (turnCount <= 1) {
-      return `رائع جداً يا **${pinRecord.client_name}**! بداية واضحة لمشروع **${pinRecord.project_name}**.\n\nبناءً على سياق المشروع (${pinRecord.custom_instructions || 'تحديد المتطلبات الأساسية'}):\n1. **أنواع المستخدمين:** من هم الأطراف الرئيسيون الذين سيستخدمون النظام يومياً (مثلاً: عميل، مشرف، مزود خدمة)؟\n2. **المدفوعات والعمليات:** ما هي طرق الدفع أو آليات إتمام العملية التي تفضل توفيرها في الإطلاق الأول (MVP)؟`;
-    }
-    if (turnCount === 2) {
-      return `تفاصيل دقيقة ومفيدة جداً! 💡\n\nلنتأكد من تغطية الحالات الحدية (Edge Cases) في **${pinRecord.project_name}**:\n1. ماذا يحدث في حال أراد المستخدم إلغاء العملية أو تعديلها بعد تأكيدها؟\n2. هل نحتاج إلى ربط النظام بخدمات خارجية مثل رسائل SMS أو WhatsApp أو خرائط التتبع في المرحلة الأولى؟`;
-    }
-    return `ممتاز يا **${pinRecord.client_name}**، الصورة أصبحت متكاملة إلى حد كبير حول **${pinRecord.project_name}**! 🎯\n\nقبل أن نقوم بتوليد وثيقة المتطلبات الكاملة (PRD):\n1. هل هناك سقف زمني أو ميزانية محددة لإطلاق النسخة الأولية (MVP) لكي نرتب الأولويات على أساسها؟\n2. هل توجد أي ميزة إضافية أو شاشة تود إرفاق صورتها لمناقشتها الآن؟`;
+    return `أهلاً بك يا **${pinRecord.client_name}**! بناءً على ما هو مسجل لدينا حول **${pinRecord.project_name}** (${pinRecord.custom_instructions || 'مشروعك'}):\n\n1. كيف تسير طريقة العمل لديكم حالياً، وما هي أكثر مشكلة تأخذ منكم وقتاً وتريد أن يحلها البرنامج فوراً؟`;
   }
 
   getStatus() {
@@ -404,6 +389,7 @@ ${devPoints}
     return {
       sandboxDir: config.SANDBOX_DIR,
       agyBin: config.AGY_BIN,
+      effort: 'low',
       activeProcesses: active
     };
   }

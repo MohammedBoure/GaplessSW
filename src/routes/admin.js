@@ -9,7 +9,7 @@
  */
 const express = require('express');
 const config = require('../config');
-const { PinRepo, MessageRepo, RateLimitRepo, SecurityEventRepo } = require('../db/repository');
+const { PinRepo, MessageRepo, RateLimitRepo, SecurityEventRepo, buildContextAwareWelcomeMessage } = require('../db/repository');
 const { createAdminToken, extractClientIp, requireAdminAuth } = require('../security/auth');
 const agyManager = require('../services/agyManager');
 
@@ -236,10 +236,16 @@ module.exports = function createAdminRouter(io) {
     }
 
     MessageRepo.clearHistory(id);
+    const welcomeText = buildContextAwareWelcomeMessage({
+      clientName: pinRecord.client_name,
+      projectName: pinRecord.project_name,
+      customInstructions: pinRecord.custom_instructions,
+      persona: pinRecord.persona
+    });
     const welcomeMsg = MessageRepo.create({
       pin_id: id,
       sender: 'ai',
-      content: `أهلاً بك مجدداً يا **${pinRecord.client_name}** في جلسة استكشاف متطلبات **${pinRecord.project_name}**! 🚀\n\nتم بدء جلسة تحليل جديدة. ما هي النقطة الأساسية التي نود التركيز عليها الآن؟`,
+      content: welcomeText,
       is_internal: 0
     });
 

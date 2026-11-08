@@ -1,0 +1,10 @@
+node_modules/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+uploads/*
+!uploads/.gitkeep
+sandbox_env/.agents/
+sandbox_env/GEMINI.md
+.env
+*.log

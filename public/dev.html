@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gapless Co-Pilot (/dev) — غرفة تحكم المطورين المباشرة</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <!-- ==================================================================
+       DEVELOPER / ADMIN AUTH OVERLAY (admin / admin123)
+       ================================================================== -->
+  <div id="devAuthOverlay" class="auth-overlay">
+    <div class="auth-card">
+      <div style="text-align:center; margin-bottom:20px;">
+        <div class="brand-logo-badge" style="width:52px; height:52px; font-size:22px;">G</div>
+        <h2 style="font-size:1.3rem; font-weight:800;">وضع المطورين Co-Pilot (/dev)</h2>
+        <p style="font-size:0.84rem; color:var(--text-secondary);">المراقبة الحية، وضع الشبح (Ghost Mode)، الملاحظات السرية، وتوليد PRD</p>
+      </div>
+
+      <form id="devLoginForm">
+        <div class="form-group">
+          <label class="form-label" for="devUsername">اسم المستخدم</label>
+          <input type="text" id="devUsername" class="form-input" value="admin" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="devPassword">كلمة المرور</label>
+          <input type="password" id="devPassword" class="form-input" placeholder="••••••••" required />
+        </div>
+        <div id="devLoginError" class="hidden" style="color:var(--accent-rose); font-size:0.84rem; margin-bottom:12px;"></div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">دخول غرفة Co-Pilot</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================================================================
+       DEVELOPER CO-PILOT 3-PANE WORKSPACE
+       ================================================================== -->
+  <div class="dashboard-layout">
+    <nav class="dash-navbar">
+      <div class="dash-nav-brand">
+        <div class="brand-logo-badge" style="width:36px; height:36px; font-size:18px; margin:0; border-radius:10px;">G</div>
+        <span>Gapless <span style="color:var(--accent-emerald);">Developer Co-Pilot</span> (/dev)</span>
+      </div>
+      <div class="dash-nav-links">
+        <a href="/" target="_blank" class="btn btn-secondary btn-sm">📱 بوابة العميل (/)</a>
+        <a href="/admin" class="btn btn-secondary btn-sm">⚙️ لوحة الإدارة (/admin)</a>
+        <button id="devLogoutBtn" type="button" class="btn btn-danger btn-sm">خروج</button>
+      </div>
+    </nav>
+
+    <div class="copilot-grid">
+      <!-- 1. Right Pane (in RTL): Active Client Sessions List -->
+      <aside class="copilot-sidebar">
+        <div style="padding:14px 16px; border-bottom:1px solid var(--border-subtle); display:flex; justify-content:space-between; align-items:center;">
+          <strong style="font-size:0.95rem;">📡 جلسات العملاء</strong>
+          <button id="refreshSessionsBtn" type="button" class="btn btn-secondary btn-sm">↻</button>
+        </div>
+        <div id="devSessionsList" style="flex:1; overflow-y:auto;"></div>
+      </aside>
+
+      <!-- 2. Center Pane: Live Chat Stream + Ghost Mode + Secret Notes ([DEV_NOTE: ...]) -->
+      <main class="copilot-center">
+        <!-- Active Session Header -->
+        <header style="padding:12px 18px; background:var(--bg-secondary); border-bottom:1px solid var(--border-subtle); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div>
+            <div id="activeSessionHeaderTitle" style="font-weight:800; font-size:1.02rem;">اختر جلسة عميل من القائمة</div>
+            <div id="activeSessionHeaderMeta" style="font-size:0.8rem; color:var(--text-secondary);">لم يتم اختيار جلسة بعد</div>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button id="generatePrdBtn" type="button" class="btn btn-emerald btn-sm" disabled>
+              📄 توليد وثيقة PRD بضغطة واحدة ([GENERATE_PRD])
+            </button>
+          </div>
+        </header>
+
+        <!-- Live Stream Container (Shows Client, AI, Ghost Badges, and Secret [DEV_NOTE: ...] items) -->
+        <div id="devChatStream" class="chat-messages-area" style="flex:1;"></div>
+
+        <!-- Live Typing Banner -->
+        <div id="devTypingBanner" class="hidden" style="padding:6px 18px; font-size:0.8rem; color:var(--accent-secondary); background:rgba(6,182,212,0.08);">
+          ⚡ جاري الكتابة أو المعالجة في الوقت الفعلي...
+        </div>
+
+        <!-- Co-Pilot Dual Action Console: Ghost Mode vs Secret Note ([DEV_NOTE: ...]) -->
+        <div style="padding:14px 18px; background:var(--bg-secondary); border-top:1px solid var(--border-subtle);">
+          <!-- Mode Selector Tabs -->
+          <div style="display:flex; gap:10px; margin-bottom:10px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
+            <div style="display:flex; gap:8px;">
+              <button type="button" id="modeTabGhost" class="btn btn-primary btn-sm">
+                👻 وضع الشبح (Ghost Mode — يظهر للعميل كأنه الذكاء الاصطناعي)
+              </button>
+              <button type="button" id="modeTabNote" class="btn btn-amber btn-sm">
+                🕵️‍♂️ ملاحظة سرية للـ AI ([DEV_NOTE: ...] — مخفية عن العميل)
+              </button>
+            </div>
+
+            <label id="triggerAiNowLabel" class="hidden" style="font-size:0.8rem; color:var(--text-secondary); display:flex; align-items:center; gap:6px; cursor:pointer;">
+              <input type="checkbox" id="triggerAiNowCheckbox" checked />
+              <span>حث `agy` على طرح سؤال فوري للعميل بناءً على الملاحظة</span>
+            </label>
+          </div>
+
+          <form id="copilotActionForm" style="display:flex; gap:10px;">
+            <textarea
+              id="copilotInput"
+              class="form-textarea"
+              rows="2"
+              placeholder="اكتب رسالتك المباشرة للعميل باسم الذكاء الاصطناعي (Ghost Mode)..."
+              disabled
+            ></textarea>
+            <button
+              type="submit"
+              id="copilotSubmitBtn"
+              class="btn btn-primary"
+              style="min-width:150px;"
+              disabled
+            >
+              👻 إرسال كـ AI
+            </button>
+          </form>
+        </div>
+      </main>
+
+      <!-- 3. Left Pane (in RTL): One-Click PRD Viewer & Export -->
+      <aside class="copilot-right">
+        <div style="padding:14px 16px; border-bottom:1px solid var(--border-subtle); display:flex; justify-content:space-between; align-items:center;">
+          <strong style="font-size:0.95rem;">📋 وثيقة المتطلبات (PRD)</strong>
+          <div style="display:flex; gap:6px;">
+            <button id="copyPrdBtn" type="button" class="btn btn-secondary btn-sm" disabled>📋 نسخ</button>
+            <button id="downloadPrdBtn" type="button" class="btn btn-secondary btn-sm" disabled>⬇ تحميل .md</button>
+          </div>
+        </div>
+
+        <div id="prdViewerContainer" class="prd-viewer">
+          <div style="color:var(--text-muted); text-align:center; padding-top:60px;">
+            اضغط على زر <strong>"توليد وثيقة PRD بضغطة واحدة ([GENERATE_PRD])"</strong> في الأعلى لتوليد وثيقة متطلبات المنتج الكاملة من محادثة العميل وملاحظات المطورين.
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/dev.js"></script>
+</body>
+</html>

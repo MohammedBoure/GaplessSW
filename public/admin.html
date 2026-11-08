@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gapless Admin — لوحة إدارة العملاء وأكواد PIN والأمان</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <!-- ==================================================================
+       ADMIN LOGIN OVERLAY (Protected: admin / admin123)
+       ================================================================== -->
+  <div id="adminAuthOverlay" class="auth-overlay">
+    <div class="auth-card">
+      <div style="text-align:center; margin-bottom:20px;">
+        <div class="brand-logo-badge" style="width:52px; height:52px; font-size:22px;">G</div>
+        <h2 style="font-size:1.3rem; font-weight:800;">لوحة إدارة النظام (/admin)</h2>
+        <p style="font-size:0.84rem; color:var(--text-secondary);">أدخل بيانات المسؤول للوصول إلى إدارة رموز PIN والأمان</p>
+      </div>
+
+      <form id="adminLoginForm">
+        <div class="form-group">
+          <label class="form-label" for="adminUsername">اسم المستخدم</label>
+          <input type="text" id="adminUsername" class="form-input" value="admin" required autocomplete="username" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="adminPassword">كلمة المرور</label>
+          <input type="password" id="adminPassword" class="form-input" placeholder="••••••••" required autocomplete="current-password" />
+        </div>
+        <div id="adminLoginError" class="hidden" style="color:var(--accent-rose); font-size:0.84rem; margin-bottom:12px;"></div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">تسجيل الدخول للوحة الإدارة</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================================================================
+       MAIN ADMIN DASHBOARD
+       ================================================================== -->
+  <div class="dashboard-layout">
+    <nav class="dash-navbar">
+      <div class="dash-nav-brand">
+        <div class="brand-logo-badge" style="width:36px; height:36px; font-size:18px; margin:0; border-radius:10px;">G</div>
+        <span>Gapless <span style="color:var(--accent-primary);">Admin</span> — إدارة الرموز والتوجيهات والأمان</span>
+      </div>
+      <div class="dash-nav-links">
+        <a href="/" target="_blank" class="btn btn-secondary btn-sm">📱 بوابة العميل (/)</a>
+        <a href="/dev" class="btn btn-emerald btn-sm">🕵️‍♂️ وضع المطورين Co-Pilot (/dev)</a>
+        <button id="adminLogoutBtn" type="button" class="btn btn-danger btn-sm">تسجيل الخروج</button>
+      </div>
+    </nav>
+
+    <div class="dash-container">
+      <!-- Top Stats Row -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px; margin-bottom:24px;">
+        <div class="card" style="padding:16px;">
+          <div style="font-size:0.8rem; color:var(--text-secondary);">إجمالي رموز العملاء (PINs)</div>
+          <div id="statTotalPins" style="font-size:1.8rem; font-weight:800; color:var(--text-primary);">0</div>
+        </div>
+        <div class="card" style="padding:16px;">
+          <div style="font-size:0.8rem; color:var(--text-secondary);">الجلسات النشطة</div>
+          <div id="statActivePins" style="font-size:1.8rem; font-weight:800; color:var(--accent-emerald);">0</div>
+        </div>
+        <div class="card" style="padding:16px;">
+          <div style="font-size:0.8rem; color:var(--text-secondary);">عناوين IP المحظورة حالياً</div>
+          <div id="statLockedIps" style="font-size:1.8rem; font-weight:800; color:var(--accent-rose);">0</div>
+        </div>
+        <div class="card" style="padding:16px;">
+          <div style="font-size:0.8rem; color:var(--text-secondary);">حالة محرك التحليل (agy)</div>
+          <div style="font-size:0.95rem; font-weight:700; color:var(--accent-secondary); margin-top:6px;">
+            🛡️ <code>agy --sandbox</code> مفعل ومعزول
+          </div>
+        </div>
+      </div>
+
+      <!-- Main 2-Column Layout -->
+      <div class="grid-2col">
+        <!-- Left Column: Create / Edit PIN Form -->
+        <div>
+          <div class="card">
+            <div class="card-header">
+              <div id="pinFormTitle" class="card-title">➕ إنشاء رمز PIN جديد لمشروع</div>
+              <button id="cancelEditBtn" type="button" class="btn btn-secondary btn-sm hidden">إلغاء التعديل</button>
+            </div>
+
+            <form id="pinConfigForm">
+              <input type="hidden" id="editingPinId" value="" />
+
+              <div class="form-group">
+                <label class="form-label">رمز الدخول من 4 أرقام (PIN)</label>
+                <div style="display:flex; gap:8px;">
+                  <input
+                    type="text"
+                    id="pinCodeInput"
+                    class="form-input"
+                    maxlength="4"
+                    pattern="\d{4}"
+                    placeholder="مثال: 4829"
+                    style="font-family:var(--font-mono); font-weight:700; font-size:1.1rem; direction:ltr; text-align:center;"
+                    required
+                  />
+                  <button type="button" id="generateRandomPinBtn" class="btn btn-secondary btn-sm" style="flex-shrink:0;">
+                    🎲 توليد تلقائي
+                  </button>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">اسم العميل (Client Name)</label>
+                <input type="text" id="clientNameInput" class="form-input" placeholder="مثال: سامي (Sami)" required />
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">اسم المشروع (Project Name)</label>
+                <input type="text" id="projectNameInput" class="form-input" placeholder="مثال: تطبيق توصيل سريع (Delivery App)" required />
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">أسلوب وشخصية المستشار الذكي (Model Persona)</label>
+                <select id="personaSelect" class="form-select">
+                  <option value="friendly_consultant">🤝 مستشار ودود ومبسط (Friendly Consultant)</option>
+                  <option value="concise_direct">⚡ مختصر ومباشر وتنفيذي (Concise & Direct)</option>
+                  <option value="technical_analyst">🧠 محلل نظم تقني ومعماري (Technical Analyst)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">تعليمات وتوصيات خاصة بالعميل (Custom Instructions per PIN)</label>
+                <textarea
+                  id="customInstructionsInput"
+                  class="form-textarea"
+                  rows="4"
+                  placeholder="مثال: العميل غير تقني، ركز على الميزانية، اسأل عن وسائل الدفع المحلية في الجزائر (BaridiMob, CIB, الدفع عند الاستلام)، وركز على لوجستيات التوصيل..."
+                ></textarea>
+              </div>
+
+              <button type="submit" id="savePinBtn" class="btn btn-primary" style="width:100%;">
+                💾 حفظ وتفعيل رمز العميل
+              </button>
+            </form>
+          </div>
+
+          <!-- Rate Limiting / IP Lockout Management Card -->
+          <div class="card" style="margin-top:22px;">
+            <div class="card-header">
+              <div class="card-title">🛡️ حالة الحماية وحظر الـ IP (Brute-Force Tracker)</div>
+              <button id="refreshOverviewBtn" type="button" class="btn btn-secondary btn-sm">تحديث ↻</button>
+            </div>
+
+            <div style="margin-bottom:12px; display:flex; gap:8px;">
+              <input type="text" id="manualLockIpInput" class="form-input" placeholder="عنوان IP لحظره يدوياً (مثال: 192.168.1.50)" style="font-size:0.82rem;" />
+              <button id="manualLockIpBtn" type="button" class="btn btn-danger btn-sm" style="flex-shrink:0;">حظر 5 دقائق</button>
+            </div>
+
+            <div id="rateLimitsContainer" style="display:flex; flex-direction:column; gap:10px;"></div>
+          </div>
+        </div>
+
+        <!-- Right Column: Active PINs Table & Security Audit Log -->
+        <div style="display:flex; flex-direction:column; gap:22px;">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">🔑 قائمة رموز العملاء والمشاريع (Active & Revoked PINs)</div>
+            </div>
+            <div id="pinsListContainer" style="display:flex; flex-direction:column; gap:14px;"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">🚨 سجل أحداث الأمان وفلاتر حقن الأوامر (Security & Sandbox Audit Log)</div>
+            </div>
+            <div id="securityEventsContainer" style="max-height:320px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "gapless-strict-sandbox-gate": {
+    "enabled": true,
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/pluto/projects/Gapless/src/sandbox_env/.agents/scripts/tool-gate.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

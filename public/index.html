@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Gapless — بوابة استكشاف متطلبات المشاريع</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body class="client-body">
+  <div class="mobile-shell">
+    <!-- ==================================================================
+         1. 4-DIGIT PIN GATEWAY SCREEN (Visitors cannot view chat without PIN)
+         ================================================================== -->
+    <section id="pinGatewayScreen" class="pin-gateway">
+      <div class="brand-header">
+        <div class="brand-logo-badge">G</div>
+        <h1 class="brand-title">Gapless</h1>
+        <p class="brand-subtitle">بوابة التحليل الذكي واستكشاف متطلبات المشاريع</p>
+      </div>
+
+      <div>
+        <p style="text-align:center; font-size:0.88rem; color:var(--text-secondary); margin-bottom:6px;">
+          أدخل رمز الجلسة المكون من <strong>4 أرقام (PIN)</strong> للمتابعة
+        </p>
+
+        <!-- 4 PIN Slots -->
+        <div id="pinSlotsContainer" class="pin-dots-container">
+          <div class="pin-slot active" data-index="0"></div>
+          <div class="pin-slot" data-index="1"></div>
+          <div class="pin-slot" data-index="2"></div>
+          <div class="pin-slot" data-index="3"></div>
+        </div>
+
+        <!-- Lockout Real-Time Countdown Card (Hidden unless locked out) -->
+        <div id="lockoutCard" class="lockout-card hidden">
+          <div style="font-weight:700; color:#fda4af; font-size:0.92rem;">
+            🔒 تم تفعيل الحماية المؤقتة (5 محاولات خاطئة)
+          </div>
+          <div id="lockoutTimerDisplay" class="lockout-timer">05:00</div>
+          <p style="font-size:0.78rem; color:var(--text-secondary);">
+            لحماية الجلسات، يرجى الانتظار حتى انتهاء العد التنازلي للمحاولة مجدداً.
+          </p>
+        </div>
+
+        <!-- Feedback / Attempts Counter -->
+        <div id="pinFeedbackText" class="pin-feedback">
+          <span style="color:var(--text-muted);">محمي بنظام الحماية ضد التخمين (حد أقصى 5 محاولات)</span>
+        </div>
+
+        <!-- Touch-Friendly Keypad -->
+        <div id="keypadGrid" class="keypad-grid">
+          <button type="button" class="key-btn" data-digit="1">1</button>
+          <button type="button" class="key-btn" data-digit="2">2</button>
+          <button type="button" class="key-btn" data-digit="3">3</button>
+          <button type="button" class="key-btn" data-digit="4">4</button>
+          <button type="button" class="key-btn" data-digit="5">5</button>
+          <button type="button" class="key-btn" data-digit="6">6</button>
+          <button type="button" class="key-btn" data-digit="7">7</button>
+          <button type="button" class="key-btn" data-digit="8">8</button>
+          <button type="button" class="key-btn" data-digit="9">9</button>
+          <button type="button" id="clearPinBtn" class="key-btn action-key">مسح</button>
+          <button type="button" class="key-btn" data-digit="0">0</button>
+          <button type="button" id="backspacePinBtn" class="key-btn action-key">⌫</button>
+        </div>
+      </div>
+
+      <footer style="text-align:center; font-size:0.75rem; color:var(--text-muted); padding-top:12px;">
+        <span>مدعوم بمحرك التحليل المعزول <code>agy --sandbox</code></span>
+        <span style="margin: 0 6px;">•</span>
+        <a href="/admin" style="color:var(--text-secondary); text-decoration:none;">الإدارة</a>
+        <span style="margin: 0 6px;">•</span>
+        <a href="/dev" style="color:var(--text-secondary); text-decoration:none;">Co-Pilot</a>
+      </footer>
+    </section>
+
+    <!-- ==================================================================
+         2. CLIENT DISCOVERY CHAT INTERFACE (100dvh, Sticky Bottom Input)
+         ================================================================== -->
+    <section id="chatDiscoveryScreen" class="chat-screen hidden">
+      <!-- Top Bar -->
+      <header class="chat-topbar">
+        <div class="chat-project-meta">
+          <span class="status-dot"></span>
+          <div>
+            <div id="chatProjectTitle" class="chat-project-title">مشروعك</div>
+            <div id="chatClientSubtitle" class="chat-client-subtitle">مستشار تحليل الأعمال الذكي (ScopeMaster)</div>
+          </div>
+        </div>
+        <button id="exitSessionBtn" type="button" class="btn btn-secondary btn-sm" title="إنهاء الجلسة">
+          خروج 🔒
+        </button>
+      </header>
+
+      <!-- Scrollable Messages Stream -->
+      <main id="chatMessagesContainer" class="chat-messages-area"></main>
+
+      <!-- Live Typing Indicator -->
+      <div id="typingIndicatorRow" class="hidden" style="padding: 0 14px 10px; display:flex; justify-content:flex-end;">
+        <div class="typing-indicator">
+          <span>المستشار الذكي يحلل ويكتب</span>
+          <div class="typing-dots">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Sticky Input Composer -->
+      <div class="chat-composer-wrapper">
+        <!-- Selected Image / Sketch Preview Chip -->
+        <div id="mediaPreviewChip" class="attachment-chip hidden">
+          <span id="mediaFileNameText" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:240px;"></span>
+          <button id="removeMediaBtn" type="button" style="background:none; border:none; color:#fda4af; cursor:pointer; font-weight:700;">✕ إزالة</button>
+        </div>
+
+        <form id="chatComposerForm" class="composer-bar">
+          <!-- Hidden File Input for Sketches, Competitor Screenshots, Wireframes -->
+          <input
+            type="file"
+            id="mediaUploadInput"
+            accept="image/*,application/pdf"
+            class="hidden"
+          />
+          <button
+            type="button"
+            id="triggerUploadBtn"
+            class="icon-btn"
+            title="إرفاق رسم تخطيطي (Sketch) أو لقطة شاشة (Wireframe)"
+            aria-label="إرفاق صورة"
+          >
+            📷
+          </button>
+
+          <textarea
+            id="messageInput"
+            class="composer-textarea"
+            rows="1"
+            placeholder="اشرح فكرتك أو أجب عن السؤال... (أو أرفق صورة للتصميم)"
+          ></textarea>
+
+          <button
+            type="submit"
+            id="sendMessageBtn"
+            class="icon-btn send-btn"
+            title="إرسال"
+            aria-label="إرسال"
+          >
+            ➤
+          </button>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/client.js"></script>
+</body>
+</html>

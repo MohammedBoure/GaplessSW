@@ -148,6 +148,20 @@ module.exports = function createAdminRouter(io) {
     });
 
     if (!updated) {
+      // If the PIN record was deleted earlier while the form was still in edit mode,
+      // gracefully create it as a new PIN if full creation details are present!
+      if (pin && client_name && project_name) {
+        const cleanPin = String(pin).trim();
+        const created = PinRepo.create({
+          pin: cleanPin,
+          client_name,
+          project_name,
+          custom_instructions: custom_instructions || '',
+          persona: persona || 'adaptive_smart'
+        });
+        io.to('dev_monitors').emit('admin:pins_updated', PinRepo.getAll());
+        return res.status(201).json({ success: true, pin: created });
+      }
       return res.status(404).json({ error: 'لم يتم العثور على رمز PIN المطلوب.' });
     }
 

@@ -153,6 +153,11 @@
   }
 
   function renderPinsList(pins) {
+    // If the currently edited PIN no longer exists in the list, automatically exit edit mode
+    if (editingPinId.value && !pins.some((p) => p.id === editingPinId.value)) {
+      resetPinForm();
+    }
+
     if (!pins.length) {
       pinsListContainer.innerHTML = `<div style="color:var(--text-muted); text-align:center; padding:24px;">لا توجد رموز PIN مسجلة حالياً. أنشئ رمزاً جديداً من النموذج الجانبي.</div>`;
       return;
@@ -350,6 +355,9 @@
         method: 'DELETE',
         headers: authHeaders()
       });
+      if (editingPinId.value === id) {
+        resetPinForm();
+      }
       await loadOverview();
     }
   });

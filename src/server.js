@@ -148,14 +148,38 @@ io.on('connection', (socket) => {
 });
 
 if (require.main === module) {
-  server.listen(config.PORT, config.HOST, () => {
-    console.log(`=============================================================`);
-    console.log(`🚀 Gapless System running on http://${config.HOST}:${config.PORT}`);
-    console.log(`   - Client Gateway (Mobile RTL): http://localhost:${config.PORT}/`);
-    console.log(`   - Admin Dashboard (/admin):    http://localhost:${config.PORT}/admin`);
-    console.log(`   - Developer Co-Pilot (/dev):   http://localhost:${config.PORT}/dev`);
-    console.log(`=============================================================`);
+  const { execSync } = require('child_process');
+
+  function startServer() {
+    server.listen(config.PORT, config.HOST, () => {
+      console.log(`=============================================================`);
+      console.log(`🚀 Gapless System running on http://${config.HOST}:${config.PORT}`);
+      console.log(`   - Client Gateway (Mobile RTL): http://localhost:${config.PORT}/`);
+      console.log(`   - Admin Dashboard (/admin):    http://localhost:${config.PORT}/admin`);
+      console.log(`   - Developer Co-Pilot (/dev):   http://localhost:${config.PORT}/dev`);
+      console.log(`=============================================================`);
+    });
+  }
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`⚠️ Port ${config.PORT} is busy. Freeing previous process on port ${config.PORT}...`);
+      try {
+        execSync(`fuser -k ${config.PORT}/tcp 2>/dev/null || true`);
+      } catch {
+        // ignore
+      }
+      setTimeout(() => {
+        server.close();
+        startServer();
+      }, 600);
+    } else {
+      console.error('Server error:', err);
+      process.exit(1);
+    }
   });
+
+  startServer();
 }
 
 module.exports = { app, server, io };

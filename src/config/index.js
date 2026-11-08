@@ -5,7 +5,7 @@
 const path = require('path');
 const crypto = require('crypto');
 
-const ROOT_DIR = path.resolve(__dirname, '..');
+const ROOT_DIR = path.resolve(__dirname, '..', '..');
 
 module.exports = {
   PORT: parseInt(process.env.PORT || '3000', 10),

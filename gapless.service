@@ -1,0 +1,22 @@
+[Unit]
+Description=Gapless — Secure AI-Powered Requirements Discovery & Client Scoping System
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pluto/projects/Gapless
+Environment="NODE_ENV=production"
+Environment="PORT=1048"
+Environment="HOST=0.0.0.0"
+Environment="AGY_BIN=/home/pluto/.local/bin/agy"
+Environment="PATH=/home/pluto/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/home/pluto/.local/bin/node /home/pluto/projects/Gapless/src/server.js
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gapless
+
+[Install]
+WantedBy=default.target

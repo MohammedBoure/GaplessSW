@@ -7,6 +7,7 @@
 ## Architecture & Directory Overview
 
 - [`package.json`](./package.json): Project dependencies (`express`, `socket.io`, `better-sqlite3`, `multer`, `helmet`, `cookie-parser`, `uuid`) and npm scripts (`npm start`, `npm run dev`, `npm test`).
+- [`gapless.service`](./gapless.service): Persistent `systemd` service unit file configured to host Gapless permanently on `0.0.0.0:1048` with auto-restart and boot startup.
 - [`.env.example`](./.env.example): Template environment configuration.
 - [`src/`](./src/README.md): Backend server, database, security guardrails, `agy` process manager, and REST/WebSocket routes.
   - [`src/config/`](./src/config/README.md): Centralized server, security, rate-limit, and `agy` CLI configuration.
@@ -67,4 +68,9 @@ npm test
 
 # 3. Start the production server (default port 1048 on 0.0.0.0)
 npm start
+
+# 4. Manage the permanent systemd service (port 1048)
+systemctl --user status gapless.service
+systemctl --user restart gapless.service
+journalctl --user -u gapless.service -f
 ```

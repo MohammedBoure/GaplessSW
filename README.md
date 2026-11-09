@@ -65,6 +65,6 @@ npm install
 # 2. Run automated verification suite
 npm test
 
-# 3. Start the production server (default port 3000)
+# 3. Start the production server (default port 1048 on 0.0.0.0)
 npm start
 ```

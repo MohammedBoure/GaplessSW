@@ -7,6 +7,7 @@
  * - `/dev`    -> Developer Co-Pilot Live Dashboard (Ghost Mode, Secret Notes, One-Click PRD)
  */
 const http = require('http');
+const os = require('os');
 const path = require('path');
 const express = require('express');
 const helmet = require('helmet');
@@ -25,6 +26,7 @@ const createDevRouter = require('./routes/dev');
 ensureSandboxEnvironment();
 
 const app = express();
+app.set('trust proxy', true);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -33,11 +35,14 @@ const io = new Server(server, {
   }
 });
 
-// Security headers via Helmet (configured to allow inline scripts/styles & Google Fonts for Arabic UI)
+// Security headers via Helmet (configured to allow inline scripts/styles, Google Fonts, and HTTP network origins)
 app.use(
   helmet({
     contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: false,
+    originAgentCluster: false,
+    hsts: false
   })
 );
 
@@ -150,13 +155,32 @@ io.on('connection', (socket) => {
 if (require.main === module) {
   const { execSync } = require('child_process');
 
+  function getNetworkAddresses() {
+    const interfaces = os.networkInterfaces();
+    const addresses = [];
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name] || []) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          addresses.push(iface.address);
+        }
+      }
+    }
+    return addresses;
+  }
+
   function startServer() {
     server.listen(config.PORT, config.HOST, () => {
+      const netIps = getNetworkAddresses();
       console.log(`=============================================================`);
       console.log(`🚀 Gapless System running on http://${config.HOST}:${config.PORT}`);
-      console.log(`   - Client Gateway (Mobile RTL): http://localhost:${config.PORT}/`);
-      console.log(`   - Admin Dashboard (/admin):    http://localhost:${config.PORT}/admin`);
-      console.log(`   - Developer Co-Pilot (/dev):   http://localhost:${config.PORT}/dev`);
+      console.log(`   - Local Client Gateway:        http://localhost:${config.PORT}/`);
+      console.log(`   - Local Admin Dashboard:       http://localhost:${config.PORT}/admin`);
+      console.log(`   - Local Developer Co-Pilot:    http://localhost:${config.PORT}/dev`);
+      for (const ip of netIps) {
+        console.log(`   - Network Client Gateway:      http://${ip}:${config.PORT}/`);
+        console.log(`   - Network Admin Dashboard:     http://${ip}:${config.PORT}/admin`);
+        console.log(`   - Network Developer Co-Pilot:  http://${ip}:${config.PORT}/dev`);
+      }
       console.log(`=============================================================`);
     });
   }

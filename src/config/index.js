@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const ROOT_DIR = path.resolve(__dirname, '..', '..');
 
 module.exports = {
-  PORT: parseInt(process.env.PORT || '3000', 10),
+  PORT: parseInt(process.env.PORT || '1048', 10),
   HOST: process.env.HOST || '0.0.0.0',
 
   // Admin credentials per specification

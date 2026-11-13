@@ -48,6 +48,16 @@
   const lightboxImage = document.getElementById('lightboxImage');
   const closeLightboxBtn = document.getElementById('closeLightboxBtn');
 
+  const nativeAudioCaptureInput = document.getElementById('nativeAudioCaptureInput');
+  const micPermissionModal = document.getElementById('micPermissionModal');
+  const micModalTitle = document.getElementById('micModalTitle');
+  const micModalDesc = document.getElementById('micModalDesc');
+  const micModalHint = document.getElementById('micModalHint');
+  const micGrantBtn = document.getElementById('micGrantBtn');
+  const micOpenLocalhostBtn = document.getElementById('micOpenLocalhostBtn');
+  const micNativeFallbackBtn = document.getElementById('micNativeFallbackBtn');
+  const micCancelModalBtn = document.getElementById('micCancelModalBtn');
+
   let currentPinDigits = [];
   let isLockedOut = false;
   let lockoutInterval = null;
@@ -620,15 +630,84 @@
     }
   }
 
-  recordVoiceBtn.addEventListener('click', async () => {
-    if (isSubmittingMessage || !activeSession) return;
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
-      alert('متصفحك لا يدعم تسجيل الصوت مباشرة، يمكنك إرفاق ملف صوتي عبر زر المشبك.');
-      return;
+  function getLegacyUserMedia(constraints) {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      return navigator.mediaDevices.getUserMedia(constraints);
+    }
+    const legacy =
+      navigator.getUserMedia ||
+      navigator.webkitGetUserMedia ||
+      navigator.mozGetUserMedia;
+    if (!legacy) return null;
+    return new Promise((resolve, reject) => {
+      legacy.call(navigator, constraints, resolve, reject);
+    });
+  }
+
+  function hasLiveMicSupport() {
+    const hasGetUserMedia = Boolean(
+      (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ||
+      navigator.getUserMedia ||
+      navigator.webkitGetUserMedia ||
+      navigator.mozGetUserMedia
+    );
+    return hasGetUserMedia && typeof MediaRecorder !== 'undefined';
+  }
+
+  function showMicPermissionModal({ mode }) {
+    if (!micPermissionModal) return;
+    micModalHint.classList.add('hidden');
+    micGrantBtn.classList.add('hidden');
+    micOpenLocalhostBtn.classList.add('hidden');
+
+    if (mode === 'prompt') {
+      micModalTitle.textContent = 'تفعيل الميكروفون';
+      micModalDesc.textContent = 'اضغط على الزر بالأسفل لمنح المتصفح صلاحية الميكروفون وتسجيل رسالتك الصوتية.';
+      micGrantBtn.textContent = 'السماح بالميكروفون الآن';
+      micGrantBtn.classList.remove('hidden');
+    } else if (mode === 'denied') {
+      micModalTitle.textContent = 'صلاحية الميكروفون مرفوضة';
+      micModalDesc.textContent = 'تم حظر الوصول إلى الميكروفون في إعدادات المتصفح.';
+      micModalHint.innerHTML =
+        'لتفعيله: اضغط على أيقونة <strong>القفل / الإعدادات</strong> بجانب رابط الموقع في الأعلى، ثم غيّر إذن <strong>الميكروفون (Microphone)</strong> إلى <strong>سماح (Allow)</strong>، ثم اضغط إعادة المحاولة.';
+      micModalHint.classList.remove('hidden');
+      micGrantBtn.textContent = 'إعادة المحاولة';
+      micGrantBtn.classList.remove('hidden');
+    } else {
+      const isZeroHost = location.hostname === '0.0.0.0' || location.hostname === '[::]';
+      micModalTitle.textContent = 'مطلوب اتصال آمن للميكروفون المباشر';
+      micModalDesc.textContent =
+        'المتصفحات تمنع التسجيل المباشر على روابط HTTP غير الآمنة (مثل عنوان الشبكة المحلية أو 0.0.0.0).';
+      if (isZeroHost) {
+        micModalHint.innerHTML =
+          'أنت تفتح الصفحة حالياً عبر <code>0.0.0.0</code>. انتقل إلى <code>localhost</code> ليطلب منك المتصفح صلاحية الميكروفون فوراً.';
+        micModalHint.classList.remove('hidden');
+        micOpenLocalhostBtn.classList.remove('hidden');
+      } else {
+        micModalHint.innerHTML =
+          'يمكنك فتح الرابط عبر <code>https://</code> أو <code>localhost</code> للتسجيل المباشر، أو استخدام مسجّل الصوت في جهازك مباشرة عبر الزر بالأسفل.';
+        micModalHint.classList.remove('hidden');
+      }
     }
 
+    micPermissionModal.classList.remove('hidden');
+  }
+
+  function hideMicPermissionModal() {
+    if (micPermissionModal) micPermissionModal.classList.add('hidden');
+  }
+
+  async function startLiveVoiceRecording() {
     try {
-      recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const streamPromise = getLegacyUserMedia({ audio: true });
+      if (!streamPromise) {
+        showMicPermissionModal({ mode: 'insecure' });
+        return;
+      }
+
+      recordingStream = await streamPromise;
+      hideMicPermissionModal();
+
       const preferredMime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'].find((m) =>
         MediaRecorder.isTypeSupported(m)
       );
@@ -667,11 +746,81 @@
       }, 400);
 
       mediaRecorder.start();
-    } catch {
+    } catch (err) {
       stopRecordingStream();
-      alert('تعذر الوصول إلى الميكروفون. يرجى السماح بصلاحية الميكروفون في المتصفح.');
+      if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
+        showMicPermissionModal({ mode: 'denied' });
+      } else if (err && (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError')) {
+        showMicPermissionModal({ mode: 'insecure' });
+        micModalTitle.textContent = 'لم يتم العثور على ميكروفون';
+        micModalDesc.textContent = 'تأكد من توصيل ميكروفون بجهازك أو أرفق ملفاً صوتياً جاهزاً.';
+      } else {
+        showMicPermissionModal({ mode: 'insecure' });
+      }
     }
+  }
+
+  recordVoiceBtn.addEventListener('click', async () => {
+    if (isSubmittingMessage || !activeSession) return;
+
+    if (!hasLiveMicSupport()) {
+      showMicPermissionModal({ mode: 'insecure' });
+      return;
+    }
+
+    if (navigator.permissions && navigator.permissions.query) {
+      try {
+        const perm = await navigator.permissions.query({ name: 'microphone' });
+        if (perm.state === 'granted') {
+          await startLiveVoiceRecording();
+          return;
+        }
+        if (perm.state === 'denied') {
+          showMicPermissionModal({ mode: 'denied' });
+          return;
+        }
+        showMicPermissionModal({ mode: 'prompt' });
+        return;
+      } catch {
+        // Fallback when Permissions API does not support 'microphone'
+      }
+    }
+
+    await startLiveVoiceRecording();
   });
+
+  if (micGrantBtn) {
+    micGrantBtn.addEventListener('click', () => {
+      startLiveVoiceRecording();
+    });
+  }
+
+  if (micOpenLocalhostBtn) {
+    micOpenLocalhostBtn.addEventListener('click', () => {
+      const portPart = location.port ? `:${location.port}` : '';
+      window.location.href = `http://localhost${portPart}${location.pathname}${location.search}`;
+    });
+  }
+
+  if (micNativeFallbackBtn && nativeAudioCaptureInput) {
+    micNativeFallbackBtn.addEventListener('click', () => {
+      nativeAudioCaptureInput.click();
+    });
+    nativeAudioCaptureInput.addEventListener('change', async () => {
+      const file = nativeAudioCaptureInput.files[0];
+      nativeAudioCaptureInput.value = '';
+      if (!file) return;
+      hideMicPermissionModal();
+      await sendClientPayload({ text: '', file });
+    });
+  }
+
+  if (micCancelModalBtn && micPermissionModal) {
+    micCancelModalBtn.addEventListener('click', hideMicPermissionModal);
+    micPermissionModal.addEventListener('click', (e) => {
+      if (e.target === micPermissionModal) hideMicPermissionModal();
+    });
+  }
 
   cancelRecordingBtn.addEventListener('click', () => {
     isRecordingCancelled = true;

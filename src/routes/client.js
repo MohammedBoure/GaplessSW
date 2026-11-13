@@ -178,6 +178,8 @@ module.exports = function createClientRouter(io) {
         pin: pinRecord.pin,
         clientName: pinRecord.client_name,
         projectName: pinRecord.project_name,
+        projectGroup: pinRecord.project_group || pinRecord.project_name,
+        participantRole: pinRecord.participant_role || 'العميل الرئيسي',
         persona: pinRecord.persona
       },
       messages
@@ -202,6 +204,8 @@ module.exports = function createClientRouter(io) {
         pin: pinRecord.pin,
         clientName: pinRecord.client_name,
         projectName: pinRecord.project_name,
+        projectGroup: pinRecord.project_group || pinRecord.project_name,
+        participantRole: pinRecord.participant_role || 'العميل الرئيسي',
         persona: pinRecord.persona
       },
       messages
@@ -290,7 +294,7 @@ module.exports = function createClientRouter(io) {
         flagReasons: sanitized.reasons
       });
 
-      // 4. Save AI response
+      // 4. Save AI response (including interactive quick-reply choices)
       const aiMsg = MessageRepo.create({
         pin_id: pinRecord.id,
         sender: 'ai',
@@ -298,7 +302,8 @@ module.exports = function createClientRouter(io) {
         is_internal: 0,
         metadata: {
           engine: agyResult.engine,
-          conversationId: agyResult.conversationId
+          conversationId: agyResult.conversationId,
+          choices: agyResult.choices || []
         }
       });
 

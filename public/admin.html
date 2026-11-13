@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gapless Admin — لوحة إدارة العملاء وأكواد PIN والأمان</title>
+  <title>Gapless Admin — إدارة المشاريع المشتركة وأكواد PIN والأمان</title>
   <link rel="stylesheet" href="/css/styles.css" />
+  <script src="/js/theme.js"></script>
 </head>
 <body>
   <!-- ==================================================================
@@ -12,10 +13,14 @@
        ================================================================== -->
   <div id="adminAuthOverlay" class="auth-overlay">
     <div class="auth-card">
-      <div style="text-align:center; margin-bottom:20px;">
-        <div class="brand-logo-badge" style="width:52px; height:52px; font-size:22px;">G</div>
-        <h2 style="font-size:1.3rem; font-weight:800;">لوحة إدارة النظام (/admin)</h2>
-        <p style="font-size:0.84rem; color:var(--text-secondary);">أدخل بيانات المسؤول للوصول إلى إدارة رموز PIN والأمان</p>
+      <div style="text-align:center; margin-bottom:22px;">
+        <div class="brand-logo-badge" style="width:48px; height:48px;">
+          <svg class="icon icon-lg" viewBox="0 0 24 24">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+        <h2 style="font-size:1.25rem; font-weight:800;">لوحة إدارة النظام (/admin)</h2>
+        <p style="font-size:0.82rem; color:var(--text-secondary); margin-top:4px;">أدخل بيانات المسؤول لإدارة المشاريع المشتركة ورموز PIN والأمان</p>
       </div>
 
       <form id="adminLoginForm">
@@ -27,7 +32,7 @@
           <label class="form-label" for="adminPassword">كلمة المرور</label>
           <input type="password" id="adminPassword" class="form-input" placeholder="••••••••" required autocomplete="current-password" />
         </div>
-        <div id="adminLoginError" class="hidden" style="color:var(--accent-rose); font-size:0.84rem; margin-bottom:12px;"></div>
+        <div id="adminLoginError" class="hidden" style="color:var(--accent-rose); font-size:0.82rem; margin-bottom:12px;"></div>
         <button type="submit" class="btn btn-primary" style="width:100%;">تسجيل الدخول للوحة الإدارة</button>
       </form>
     </div>
@@ -39,46 +44,86 @@
   <div class="dashboard-layout">
     <nav class="dash-navbar">
       <div class="dash-nav-brand">
-        <div class="brand-logo-badge" style="width:36px; height:36px; font-size:18px; margin:0; border-radius:10px;">G</div>
-        <span>Gapless <span style="color:var(--accent-primary);">Admin</span> — إدارة الرموز والتوجيهات والأمان</span>
+        <div class="brand-logo-badge" style="width:34px; height:34px; margin:0; border-radius:9px;">
+          <svg class="icon" viewBox="0 0 24 24">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+          </svg>
+        </div>
+        <span>Gapless <span style="color:var(--brand-primary);">Admin</span> — إدارة المشاريع المشتركة والأمان</span>
       </div>
       <div class="dash-nav-links">
-        <a href="/" target="_blank" class="btn btn-secondary btn-sm">📱 بوابة العميل (/)</a>
-        <a href="/dev" class="btn btn-emerald btn-sm">🕵️‍♂️ وضع المطورين Co-Pilot (/dev)</a>
-        <button id="adminLogoutBtn" type="button" class="btn btn-danger btn-sm">تسجيل الخروج</button>
+        <button type="button" class="theme-toggle-btn" data-theme-toggle aria-label="تبديل المظهر"></button>
+        <a href="/" target="_blank" class="btn btn-secondary btn-sm">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+          <span>بوابة العميل</span>
+        </a>
+        <a href="/dev" class="btn btn-primary btn-sm">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          <span>غرفة المطورين Co-Pilot (/dev)</span>
+        </a>
+        <button id="adminLogoutBtn" type="button" class="btn btn-danger btn-sm">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <span>خروج</span>
+        </button>
       </div>
     </nav>
 
     <div class="dash-container">
       <!-- Top Stats Row -->
-      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px; margin-bottom:24px;">
-        <div class="card" style="padding:16px;">
-          <div style="font-size:0.8rem; color:var(--text-secondary);">إجمالي رموز العملاء (PINs)</div>
-          <div id="statTotalPins" style="font-size:1.8rem; font-weight:800; color:var(--text-primary);">0</div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div>
+            <div style="font-size:0.78rem; color:var(--text-secondary);">إجمالي رموز المشاركين (PINs)</div>
+            <div id="statTotalPins" style="font-size:1.65rem; font-weight:800; color:var(--text-primary); margin-top:2px;">0</div>
+          </div>
+          <div class="stat-icon-box">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
         </div>
-        <div class="card" style="padding:16px;">
-          <div style="font-size:0.8rem; color:var(--text-secondary);">الجلسات النشطة</div>
-          <div id="statActivePins" style="font-size:1.8rem; font-weight:800; color:var(--accent-emerald);">0</div>
+
+        <div class="stat-card">
+          <div>
+            <div style="font-size:0.78rem; color:var(--text-secondary);">الجلسات النشطة</div>
+            <div id="statActivePins" style="font-size:1.65rem; font-weight:800; color:var(--accent-emerald); margin-top:2px;">0</div>
+          </div>
+          <div class="stat-icon-box" style="background:var(--accent-emerald-soft); color:var(--accent-emerald);">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
         </div>
-        <div class="card" style="padding:16px;">
-          <div style="font-size:0.8rem; color:var(--text-secondary);">عناوين IP المحظورة حالياً</div>
-          <div id="statLockedIps" style="font-size:1.8rem; font-weight:800; color:var(--accent-rose);">0</div>
+
+        <div class="stat-card">
+          <div>
+            <div style="font-size:0.78rem; color:var(--text-secondary);">عناوين IP المحظورة حالياً</div>
+            <div id="statLockedIps" style="font-size:1.65rem; font-weight:800; color:var(--accent-rose); margin-top:2px;">0</div>
+          </div>
+          <div class="stat-icon-box" style="background:var(--accent-rose-soft); color:var(--accent-rose);">
+            <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
         </div>
-        <div class="card" style="padding:16px;">
-          <div style="font-size:0.8rem; color:var(--text-secondary);">حالة محرك التحليل (agy)</div>
-          <div style="font-size:0.95rem; font-weight:700; color:var(--accent-secondary); margin-top:6px;">
-            ⚡ <code>Gemini 3.8 Flash (Low)</code> — <code>--sandbox</code>
+
+        <div class="stat-card">
+          <div>
+            <div style="font-size:0.78rem; color:var(--text-secondary);">محرك التحليل النشط</div>
+            <div style="font-size:0.86rem; font-weight:700; color:var(--brand-text); margin-top:6px;">
+              <code>Gemini 3.8 Flash (Low)</code>
+            </div>
+          </div>
+          <div class="stat-icon-box">
+            <svg class="icon" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
           </div>
         </div>
       </div>
 
       <!-- Main 2-Column Layout -->
       <div class="grid-2col">
-        <!-- Left Column: Create / Edit PIN Form -->
+        <!-- Left Column: Create / Edit PIN & Link Multi-User Project -->
         <div>
           <div class="card">
             <div class="card-header">
-              <div id="pinFormTitle" class="card-title">➕ إنشاء رمز PIN جديد لمشروع</div>
+              <div class="card-title">
+                <svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <span id="pinFormTitle">إضافة مشارك / رمز PIN لمشروع</span>
+              </div>
               <button id="cancelEditBtn" type="button" class="btn btn-secondary btn-sm hidden">إلغاء التعديل</button>
             </div>
 
@@ -95,47 +140,85 @@
                     maxlength="4"
                     pattern="\d{4}"
                     placeholder="مثال: 4829"
-                    style="font-family:var(--font-mono); font-weight:700; font-size:1.1rem; direction:ltr; text-align:center;"
+                    style="font-family:var(--font-mono); font-weight:700; font-size:1.05rem; direction:ltr; text-align:center;"
                     required
                   />
                   <button type="button" id="generateRandomPinBtn" class="btn btn-secondary btn-sm" style="flex-shrink:0;">
-                    🎲 توليد تلقائي
+                    <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    <span>توليد رقم</span>
                   </button>
                 </div>
               </div>
 
               <div class="form-group">
-                <label class="form-label">اسم العميل (Client Name)</label>
-                <input type="text" id="clientNameInput" class="form-input" placeholder="مثال: سامي (Sami)" required />
+                <label class="form-label">
+                  <span>اسم المشروع المشترك (Shared Project Group)</span>
+                  <span style="font-size:0.72rem; color:var(--brand-text);">يربط عدة مستخدمين بشجرة واحدة</span>
+                </label>
+                <input
+                  type="text"
+                  id="projectNameInput"
+                  list="existingProjectsDatalist"
+                  class="form-input"
+                  placeholder="مثال: stocklamplus (اختر مشروعاً حالياً لربط محادثة جديدة به)"
+                  required
+                />
+                <datalist id="existingProjectsDatalist"></datalist>
+                <div class="form-hint">عند كتابة نفس اسم المشروع لعدة أشخاص، يتم ربط محادثاتهم تلقائياً في شجرة بيانات موحدة يقرأها الذكاء الاصطناعي.</div>
+              </div>
+
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                <div class="form-group">
+                  <label class="form-label">اسم المستخدم / المشارك</label>
+                  <input type="text" id="clientNameInput" class="form-input" placeholder="مثال: موسى" required />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">دوره في المشروع (Role)</label>
+                  <input
+                    type="text"
+                    id="participantRoleInput"
+                    list="rolesList"
+                    class="form-input"
+                    placeholder="مثال: صاحب المحل / أمين المخزن"
+                    value="العميل الرئيسي (Project Owner)"
+                  />
+                  <datalist id="rolesList">
+                    <option value="العميل الرئيسي (Project Owner)"></option>
+                    <option value="مدير المبيعات والكاشير"></option>
+                    <option value="أمين المخزن والمستودع"></option>
+                    <option value="المحاسب المالي"></option>
+                    <option value="مشرف العمليات"></option>
+                  </datalist>
+                </div>
               </div>
 
               <div class="form-group">
-                <label class="form-label">اسم المشروع (Project Name)</label>
-                <input type="text" id="projectNameInput" class="form-input" placeholder="مثال: تطبيق توصيل سريع (Delivery App)" required />
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">أسلوب وشخصية المستشار الذكي (Model Persona)</label>
+                <label class="form-label">أسلوب التواصل (Model Persona)</label>
                 <select id="personaSelect" class="form-select">
-                  <option value="adaptive_smart">🔄 متكيف ذكي مع طبيعة العميل (Dynamic Client-Adaptive)</option>
-                  <option value="friendly_consultant">🤝 مستشار ودود ومبسط (Friendly Consultant)</option>
-                  <option value="concise_direct">⚡ مختصر ومباشر وتنفيذي (Concise & Direct)</option>
-                  <option value="technical_analyst">🧠 محلل نظم تقني ومعماري (Technical Analyst)</option>
+                  <option value="adaptive_smart">متكيف ذكي مع طبيعة العميل (Dynamic Client-Adaptive)</option>
+                  <option value="friendly_consultant">مستشار أعمال ودود ومبسط (Friendly Consultant)</option>
+                  <option value="concise_direct">مختصر ومباشر وتنفيذي (Concise & Direct)</option>
+                  <option value="technical_analyst">محلل نظم تقني ومعماري (Technical Analyst)</option>
                 </select>
               </div>
 
               <div class="form-group">
-                <label class="form-label">تعليمات وتوصيات خاصة بالعميل (Custom Instructions per PIN)</label>
+                <label class="form-label">
+                  <span>معلومات خلفية سرية عن هذا المستخدم (مخفية تماماً عنه)</span>
+                  <span class="badge badge-revoked" style="font-size:0.68rem;">سري للـ AI فقط</span>
+                </label>
                 <textarea
                   id="customInstructionsInput"
                   class="form-textarea"
-                  rows="4"
-                  placeholder="مثال: العميل غير تقني، ركز على الميزانية، اسأل عن وسائل الدفع المحلية في الجزائر (BaridiMob, CIB, الدفع عند الاستلام)، وركز على لوجستيات التوصيل..."
+                  rows="3"
+                  placeholder="اكتب أي معلومات أولية عن المستخدم أو المحل لكي يأخذها الذكاء الاصطناعي بالحسبان بصمت دون أن يظهرها للمستخدم..."
                 ></textarea>
               </div>
 
               <button type="submit" id="savePinBtn" class="btn btn-primary" style="width:100%;">
-                💾 حفظ وتفعيل رمز العميل
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                <span>حفظ وتفعيل رمز المشارك</span>
               </button>
             </form>
           </div>
@@ -143,8 +226,11 @@
           <!-- Rate Limiting / IP Lockout Management Card -->
           <div class="card" style="margin-top:22px;">
             <div class="card-header">
-              <div class="card-title">🛡️ حالة الحماية وحظر الـ IP (Brute-Force Tracker)</div>
-              <button id="refreshOverviewBtn" type="button" class="btn btn-secondary btn-sm">تحديث ↻</button>
+              <div class="card-title">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                <span>حماية البوابة وحظر عناوين IP</span>
+              </div>
+              <button id="refreshOverviewBtn" type="button" class="btn btn-secondary btn-sm">تحديث</button>
             </div>
 
             <div style="margin-bottom:12px; display:flex; gap:8px;">
@@ -156,20 +242,26 @@
           </div>
         </div>
 
-        <!-- Right Column: Active PINs Table & Security Audit Log -->
+        <!-- Right Column: Project-Grouped PINs & Security Audit Log -->
         <div style="display:flex; flex-direction:column; gap:22px;">
           <div class="card">
             <div class="card-header">
-              <div class="card-title">🔑 قائمة رموز العملاء والمشاريع (Active & Revoked PINs)</div>
+              <div class="card-title">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                <span>المشاريع المشتركة وجلسات المستخدمين المتصلة (Multi-User Project Trees)</span>
+              </div>
             </div>
-            <div id="pinsListContainer" style="display:flex; flex-direction:column; gap:14px;"></div>
+            <div id="pinsListContainer" style="display:flex; flex-direction:column; gap:16px;"></div>
           </div>
 
           <div class="card">
             <div class="card-header">
-              <div class="card-title">🚨 سجل أحداث الأمان وفلاتر حقن الأوامر (Security & Sandbox Audit Log)</div>
+              <div class="card-title">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                <span>سجل أحداث الأمان وفلاتر الحماية (Security Audit Log)</span>
+              </div>
             </div>
-            <div id="securityEventsContainer" style="max-height:320px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;"></div>
+            <div id="securityEventsContainer" style="max-height:300px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;"></div>
           </div>
         </div>
       </div>

@@ -28,6 +28,7 @@ module.exports = {
   DB_PATH: path.join(ROOT_DIR, 'data', 'gapless.db'),
   UPLOADS_DIR: path.join(ROOT_DIR, 'uploads'),
   SANDBOX_DIR: path.join(ROOT_DIR, 'sandbox_env'),
+  PROJECT_TREES_DIR: path.join(ROOT_DIR, 'sandbox_env', 'projects_tree'),
   PUBLIC_DIR: path.join(ROOT_DIR, 'public'),
 
   // AGY CLI settings

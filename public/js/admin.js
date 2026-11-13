@@ -4,9 +4,10 @@
  * Handles:
  * - Admin authentication (admin / admin123)
  * - Creating, editing, revoking, reactivating, and deleting 4-digit PINs
- * - Custom Instructions & Model Persona configuration per PIN
+ * - Grouping multiple participant PINs under a shared Project Group (`project_group`)
+ * - One-click "+ إضافة مشارك آخر لنفس المشروع" to easily spawn connected chats for the same project
+ * - Confidential per-user context (`custom_instructions`) kept strictly hidden from the client
  * - Live tracking of IP brute-force lockouts & manual IP unblocking/locking
- * - Security & Prompt Injection audit logs
  */
 (function () {
   const adminAuthOverlay = document.getElementById('adminAuthOverlay');
@@ -28,6 +29,8 @@
   const generateRandomPinBtn = document.getElementById('generateRandomPinBtn');
   const clientNameInput = document.getElementById('clientNameInput');
   const projectNameInput = document.getElementById('projectNameInput');
+  const participantRoleInput = document.getElementById('participantRoleInput');
+  const existingProjectsDatalist = document.getElementById('existingProjectsDatalist');
   const personaSelect = document.getElementById('personaSelect');
   const customInstructionsInput = document.getElementById('customInstructionsInput');
   const savePinBtn = document.getElementById('savePinBtn');
@@ -57,10 +60,10 @@
   }
 
   const PERSONA_LABELS = {
-    adaptive_smart: '🔄 متكيف ذكي مع طبيعة العميل (Dynamic Adaptive)',
-    friendly_consultant: '🤝 مستشار ودود (Friendly Consultant)',
-    concise_direct: '⚡ مختصر ومباشر (Concise & Direct)',
-    technical_analyst: '🧠 محلل تقني (Technical Analyst)'
+    adaptive_smart: 'متكيف ذكي (Dynamic Adaptive)',
+    friendly_consultant: 'مستشار ودود (Friendly Consultant)',
+    concise_direct: 'مختصر ومباشر (Concise & Direct)',
+    technical_analyst: 'محلل تقني (Technical Analyst)'
   };
 
   function authHeaders() {
@@ -70,18 +73,20 @@
     };
   }
 
-  // Normalize '٩' -> 'ج' on text inputs
-  [clientNameInput, projectNameInput, customInstructionsInput].forEach((input) => {
+  [clientNameInput, projectNameInput, participantRoleInput, customInstructionsInput].forEach((input) => {
+    if (!input) return;
     input.addEventListener('input', () => {
       const fixed = normalizeTextJeem(input.value);
       if (fixed !== input.value) input.value = fixed;
     });
   });
 
-  // Generate random 4-digit PIN
+  function generateRandomPin() {
+    return String(Math.floor(1000 + Math.random() * 9000));
+  }
+
   generateRandomPinBtn.addEventListener('click', () => {
-    const random4 = String(Math.floor(1000 + Math.random() * 9000));
-    pinCodeInput.value = random4;
+    pinCodeInput.value = generateRandomPin();
   });
 
   // ============================================================================
@@ -126,7 +131,7 @@
   });
 
   // ============================================================================
-  // 2. Load & Render Dashboard Data
+  // 2. Load & Render Dashboard Data (Grouped by Shared Project)
   // ============================================================================
   async function loadOverview() {
     try {
@@ -140,6 +145,7 @@
       socket.emit('dev:join', { token: adminToken });
 
       allPins = data.pins || [];
+      updateProjectsDatalist(allPins);
       renderPinsList(allPins);
       renderRateLimits(data.rateLimits || []);
       renderSecurityEvents(data.securityEvents || []);
@@ -152,73 +158,118 @@
     }
   }
 
+  function updateProjectsDatalist(pins) {
+    if (!existingProjectsDatalist) return;
+    const uniqueGroups = Array.from(
+      new Set(pins.map((p) => (p.project_group || p.project_name || '').trim()).filter(Boolean))
+    );
+    existingProjectsDatalist.innerHTML = uniqueGroups
+      .map((g) => `<option value="${escapeHtml(g)}"></option>`)
+      .join('');
+  }
+
   function renderPinsList(pins) {
-    // If the currently edited PIN no longer exists in the list, automatically exit edit mode
     if (editingPinId.value && !pins.some((p) => p.id === editingPinId.value)) {
       resetPinForm();
     }
 
     if (!pins.length) {
-      pinsListContainer.innerHTML = `<div style="color:var(--text-muted); text-align:center; padding:24px;">لا توجد رموز PIN مسجلة حالياً. أنشئ رمزاً جديداً من النموذج الجانبي.</div>`;
+      pinsListContainer.innerHTML = `<div style="color:var(--text-muted); text-align:center; padding:24px;">لا توجد مشاريع أو رموز PIN مسجلة حالياً. أنشئ رمزاً جديداً من النموذج الجانبي.</div>`;
       return;
     }
 
-    pinsListContainer.innerHTML = pins
-      .map((item) => {
-        const isActive = item.status === 'active';
-        const personaLabel = PERSONA_LABELS[item.persona] || item.persona;
-        return `
-          <div class="card" style="background:var(--bg-primary); padding:16px;">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
-              <div style="display:flex; align-items:center; gap:12px;">
-                <span class="pin-code-pill">${escapeHtml(item.pin)}</span>
-                <div>
-                  <div style="font-weight:700; font-size:1rem;">
-                    ${escapeHtml(item.client_name)} — <span style="color:var(--accent-secondary);">${escapeHtml(item.project_name)}</span>
+    // Group PINs by project_group
+    const groupsMap = new Map();
+    for (const p of pins) {
+      const groupName = (p.project_group || p.project_name || 'مشروع عام').trim();
+      if (!groupsMap.has(groupName)) {
+        groupsMap.set(groupName, []);
+      }
+      groupsMap.get(groupName).push(p);
+    }
+
+    const htmlBlocks = [];
+    for (const [groupName, members] of groupsMap.entries()) {
+      const membersHtml = members
+        .map((item) => {
+          const isActive = item.status === 'active';
+          const personaLabel = PERSONA_LABELS[item.persona] || item.persona;
+          const roleLabel = item.participant_role || 'العميل الرئيسي';
+
+          return `
+            <div style="background:var(--bg-primary); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:14px; margin-top:10px;">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                  <span class="pin-code-pill">${escapeHtml(item.pin)}</span>
+                  <div>
+                    <div style="font-weight:700; font-size:0.95rem; color:var(--text-primary);">
+                      ${escapeHtml(item.client_name)}
+                    </div>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:5px;">
+                      <span class="badge badge-role">${escapeHtml(roleLabel)}</span>
+                      <span class="badge ${isActive ? 'badge-active' : 'badge-revoked'}">
+                        ${isActive ? 'نشط' : 'موقوف'}
+                      </span>
+                      <span class="badge badge-persona">${escapeHtml(personaLabel)}</span>
+                      <span class="badge" style="background:var(--bg-elevated); color:var(--text-secondary);">
+                        ${item.message_count || 0} رسالة
+                      </span>
+                    </div>
                   </div>
-                  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">
-                    <span class="badge ${isActive ? 'badge-active' : 'badge-revoked'}">
-                      ${isActive ? '● نشط (Active)' : '⊘ موقوف (Revoked)'}
-                    </span>
-                    <span class="badge badge-persona">${escapeHtml(personaLabel)}</span>
-                    <span class="badge" style="background:rgba(255,255,255,0.06); color:var(--text-secondary);">
-                      💬 ${item.message_count || 0} رسالة
-                    </span>
-                  </div>
+                </div>
+
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                  <a href="/dev?pinId=${encodeURIComponent(item.id)}" class="btn btn-primary btn-sm">
+                    <span>فتح في Co-Pilot</span>
+                  </a>
+                  <button type="button" class="btn btn-secondary btn-sm" data-action="edit" data-id="${escapeHtml(item.id)}">
+                    تعديل
+                  </button>
+                  <button type="button" class="btn btn-amber btn-sm" data-action="toggle-status" data-id="${escapeHtml(item.id)}" data-status="${isActive ? 'revoked' : 'active'}">
+                    ${isActive ? 'إيقاف' : 'تفعيل'}
+                  </button>
+                  <button type="button" class="btn btn-danger btn-sm" data-action="delete" data-id="${escapeHtml(item.id)}">
+                    حذف
+                  </button>
                 </div>
               </div>
 
-              <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                <a href="/dev?pinId=${encodeURIComponent(item.id)}" class="btn btn-emerald btn-sm">
-                  🕵️‍♂️ مراقبة Co-Pilot
-                </a>
-                <button type="button" class="btn btn-secondary btn-sm" data-action="edit" data-id="${escapeHtml(item.id)}">
-                  ✏️ تعديل
-                </button>
-                <button type="button" class="btn btn-amber btn-sm" data-action="toggle-status" data-id="${escapeHtml(item.id)}" data-status="${isActive ? 'revoked' : 'active'}">
-                  ${isActive ? '⏸ إيقاف الرمز' : '▶ تفعيل الرمز'}
-                </button>
-                <button type="button" class="btn btn-danger btn-sm" data-action="delete" data-id="${escapeHtml(item.id)}">
-                  🗑 حذف
-                </button>
+              <div style="margin-top:10px; padding:8px 12px; background:var(--bg-secondary); border-radius:6px; border-right:3px solid var(--brand-primary); font-size:0.8rem; color:var(--text-secondary);">
+                <strong style="color:var(--text-primary);">السياق الخلفي السري (مخفي عن المستخدم):</strong>
+                ${item.custom_instructions ? escapeHtml(item.custom_instructions) : '<em>لا توجد ملاحظات خلفية مسجلة.</em>'}
               </div>
             </div>
+          `;
+        })
+        .join('');
 
-            <div style="margin-top:12px; padding:10px 12px; background:rgba(30,41,59,0.55); border-radius:8px; border-right:3px solid var(--accent-primary); font-size:0.84rem; color:var(--text-secondary);">
-              <strong style="color:var(--text-primary);">التعليمات والتوصيات المخصصة للعميل:</strong><br/>
-              ${item.custom_instructions ? escapeHtml(item.custom_instructions) : '<em>لا توجد تعليمات خاصة مضافة.</em>'}
+      htmlBlocks.push(`
+        <div class="card" style="padding:16px; background:var(--bg-elevated); border:1px solid var(--border-strong);">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; padding-bottom:10px; border-bottom:1px solid var(--border-subtle);">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <svg class="icon" viewBox="0 0 24 24" style="color:var(--brand-primary);"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <div>
+                <div style="font-weight:800; font-size:1rem; color:var(--text-primary);">مشروع: ${escapeHtml(groupName)}</div>
+                <div style="font-size:0.76rem; color:var(--text-secondary);">عدد المحادثات/المشاركين المتصلين بشجرة المشروع: <strong>${members.length}</strong></div>
+              </div>
             </div>
+            <button type="button" class="btn btn-secondary btn-sm" data-action="add-member-to-project" data-project="${escapeHtml(groupName)}">
+              + إضافة مستخدم آخر لهذا المشروع
+            </button>
           </div>
-        `;
-      })
-      .join('');
+          ${membersHtml}
+        </div>
+      `);
+    }
+
+    pinsListContainer.innerHTML = htmlBlocks.join('');
   }
 
   function renderRateLimits(rateLimits) {
     statLockedIps.textContent = rateLimits.filter((r) => r.is_locked).length;
 
     if (!rateLimits.length) {
-      rateLimitsContainer.innerHTML = `<div style="font-size:0.84rem; color:var(--text-muted); padding:10px 0;">لا توجد محاولات دخول خاطئة أو عناوين IP محظورة حالياً. ✅</div>`;
+      rateLimitsContainer.innerHTML = `<div style="font-size:0.82rem; color:var(--text-muted); padding:8px 0;">لا توجد محاولات دخول خاطئة أو عناوين IP محظورة حالياً.</div>`;
       return;
     }
 
@@ -229,18 +280,18 @@
         const timerStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 
         return `
-          <div style="padding:12px; background:var(--bg-primary); border:1px solid ${rl.is_locked ? 'rgba(244,63,94,0.5)' : 'var(--border-subtle)'}; border-radius:10px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+          <div style="padding:12px; background:var(--bg-primary); border:1px solid ${rl.is_locked ? 'var(--accent-rose)' : 'var(--border-subtle)'}; border-radius:var(--radius-sm); display:flex; justify-content:space-between; align-items:center; gap:10px;">
             <div>
-              <div style="font-family:var(--font-mono); font-weight:700; font-size:0.9rem; direction:ltr; text-align:right;">
+              <div style="font-family:var(--font-mono); font-weight:700; font-size:0.88rem; direction:ltr; text-align:right;">
                 IP: ${escapeHtml(rl.ip)}
               </div>
-              <div style="font-size:0.78rem; color:${rl.is_locked ? '#fda4af' : 'var(--text-secondary)'}; margin-top:2px;">
+              <div style="font-size:0.76rem; color:${rl.is_locked ? 'var(--accent-rose)' : 'var(--text-secondary)'}; margin-top:2px;">
                 المحاولات الخاطئة: <strong>${rl.failed_attempts} / 5</strong>
-                ${rl.is_locked ? ` • 🔒 محظور (متبقي <span style="font-family:var(--font-mono);">${timerStr}</span>)` : ''}
+                ${rl.is_locked ? ` • محظور (متبقي <span style="font-family:var(--font-mono);">${timerStr}</span>)` : ''}
               </div>
             </div>
             <button type="button" class="btn btn-emerald btn-sm" data-unblock-ip="${escapeHtml(rl.ip)}">
-              🔓 فك الحظر وتصفير العداد
+              فك الحظر
             </button>
           </div>
         `;
@@ -250,7 +301,7 @@
 
   function renderSecurityEvents(events) {
     if (!events.length) {
-      securityEventsContainer.innerHTML = `<div style="font-size:0.84rem; color:var(--text-muted);">لا توجد أحداث أمنية مسجلة.</div>`;
+      securityEventsContainer.innerHTML = `<div style="font-size:0.82rem; color:var(--text-muted);">لا توجد أحداث أمنية مسجلة.</div>`;
       return;
     }
 
@@ -259,9 +310,9 @@
         const isAlert = ev.event_type.includes('LOCKOUT') || ev.event_type.includes('INJECTION') || ev.event_type.includes('FAILED');
         const timeStr = new Date(ev.created_at).toLocaleTimeString('ar-DZ');
         return `
-          <div style="padding:9px 12px; background:var(--bg-primary); border-radius:8px; border-right:3px solid ${isAlert ? 'var(--accent-rose)' : 'var(--accent-emerald)'}; font-size:0.8rem; display:flex; justify-content:space-between; gap:10px;">
+          <div style="padding:9px 12px; background:var(--bg-primary); border-radius:var(--radius-xs); border-right:3px solid ${isAlert ? 'var(--accent-rose)' : 'var(--accent-emerald)'}; font-size:0.78rem; display:flex; justify-content:space-between; gap:10px;">
             <div>
-              <strong style="color:${isAlert ? '#fda4af' : '#6ee7b7'};">[${escapeHtml(ev.event_type)}]</strong>
+              <strong style="color:${isAlert ? 'var(--accent-rose)' : 'var(--accent-emerald)'};">[${escapeHtml(ev.event_type)}]</strong>
               <span style="color:var(--text-secondary); margin-right:6px;">${escapeHtml(ev.details)}</span>
             </div>
             <div style="color:var(--text-muted); font-family:var(--font-mono); white-space:nowrap; direction:ltr;">
@@ -274,14 +325,15 @@
   }
 
   // ============================================================================
-  // 3. Create / Edit / Toggle / Delete PIN Handlers
+  // 3. Create / Edit / Add Linked Member / Delete PIN Handlers
   // ============================================================================
   function resetPinForm() {
     editingPinId.value = '';
-    pinFormTitle.textContent = '➕ إنشاء رمز PIN جديد لمشروع';
-    savePinBtn.textContent = '💾 حفظ وتفعيل رمز العميل';
+    pinFormTitle.textContent = 'إضافة مشارك / رمز PIN لمشروع';
+    savePinBtn.innerHTML = `<span>حفظ وتفعيل رمز المشارك</span>`;
     cancelEditBtn.classList.add('hidden');
     pinConfigForm.reset();
+    participantRoleInput.value = 'العميل الرئيسي (Project Owner)';
   }
 
   cancelEditBtn.addEventListener('click', resetPinForm);
@@ -289,10 +341,13 @@
   pinConfigForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const id = editingPinId.value;
+    const projectVal = normalizeTextJeem(projectNameInput.value.trim());
     const payload = {
       pin: pinCodeInput.value.trim(),
       client_name: normalizeTextJeem(clientNameInput.value.trim()),
-      project_name: normalizeTextJeem(projectNameInput.value.trim()),
+      project_name: projectVal,
+      project_group: projectVal,
+      participant_role: normalizeTextJeem(participantRoleInput.value.trim() || 'العميل الرئيسي (Project Owner)'),
       persona: personaSelect.value,
       custom_instructions: normalizeTextJeem(customInstructionsInput.value.trim())
     };
@@ -324,6 +379,21 @@
     if (!btn) return;
 
     const action = btn.dataset.action;
+
+    if (action === 'add-member-to-project') {
+      const proj = btn.dataset.project || '';
+      resetPinForm();
+      pinCodeInput.value = generateRandomPin();
+      projectNameInput.value = proj;
+      participantRoleInput.value = '';
+      participantRoleInput.placeholder = 'اكتب دور هذا الشخص (مثلاً: أمين المخزن، محاسب الكاشير...)';
+      pinFormTitle.textContent = `إضافة مشارك متصل بمشروع (${proj})`;
+      cancelEditBtn.classList.remove('hidden');
+      clientNameInput.focus();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
     const id = btn.dataset.id;
     const pinObj = allPins.find((p) => p.id === id);
     if (!pinObj) return;
@@ -332,11 +402,12 @@
       editingPinId.value = pinObj.id;
       pinCodeInput.value = pinObj.pin;
       clientNameInput.value = pinObj.client_name;
-      projectNameInput.value = pinObj.project_name;
+      projectNameInput.value = pinObj.project_group || pinObj.project_name;
+      participantRoleInput.value = pinObj.participant_role || 'العميل الرئيسي (Project Owner)';
       personaSelect.value = pinObj.persona;
       customInstructionsInput.value = pinObj.custom_instructions || '';
-      pinFormTitle.textContent = `✏️ تعديل رمز العميل (#${pinObj.pin})`;
-      savePinBtn.textContent = '💾 تحديث بيانات الرمز';
+      pinFormTitle.textContent = `تعديل بيانات المشارك (#${pinObj.pin})`;
+      savePinBtn.innerHTML = `<span>تحديث بيانات المشارك</span>`;
       cancelEditBtn.classList.remove('hidden');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else if (action === 'toggle-status') {
@@ -348,7 +419,7 @@
       });
       await loadOverview();
     } else if (action === 'delete') {
-      if (!confirm(`هل أنت متأكد من حذف رمز العميل (${pinObj.client_name} - #${pinObj.pin}) وجميع محادثاته؟`)) {
+      if (!confirm(`هل أنت متأكد من حذف رمز المشارك (${pinObj.client_name} - #${pinObj.pin}) وجميع محادثاته؟`)) {
         return;
       }
       await fetch(`/api/admin/pins/${id}`, {
@@ -362,7 +433,6 @@
     }
   });
 
-  // Unblock IP handler
   rateLimitsContainer.addEventListener('click', async (e) => {
     const btn = e.target.closest('button[data-unblock-ip]');
     if (!btn) return;
@@ -375,7 +445,6 @@
     await loadOverview();
   });
 
-  // Manual Lock IP handler
   manualLockIpBtn.addEventListener('click', async () => {
     const ip = manualLockIpInput.value.trim();
     if (!ip) return;
@@ -390,13 +459,13 @@
 
   refreshOverviewBtn.addEventListener('click', loadOverview);
 
-  // Real-time Socket Updates
   socket.on('security:rate_limit_updated', (list) => {
     renderRateLimits(list || []);
   });
 
   socket.on('admin:pins_updated', (pins) => {
     allPins = pins || [];
+    updateProjectsDatalist(allPins);
     renderPinsList(allPins);
   });
 
@@ -404,13 +473,11 @@
     loadOverview();
   });
 
-  // Auto-refresh lockout timers every 3 seconds
   setInterval(() => {
     if (adminAuthOverlay.classList.contains('hidden')) {
       loadOverview();
     }
   }, 5000);
 
-  // Initialize
   loadOverview();
 })();

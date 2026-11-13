@@ -9,7 +9,14 @@
  */
 const express = require('express');
 const config = require('../config');
-const { PinRepo, MessageRepo, RateLimitRepo, SecurityEventRepo, buildContextAwareWelcomeMessage } = require('../db/repository');
+const {
+  PinRepo,
+  MessageRepo,
+  RateLimitRepo,
+  SecurityEventRepo,
+  buildContextAwareWelcomeMessage,
+  getDefaultWelcomeChoices
+} = require('../db/repository');
 const { createAdminToken, extractClientIp, requireAdminAuth } = require('../security/auth');
 const agyManager = require('../services/agyManager');
 
@@ -92,7 +99,15 @@ module.exports = function createAdminRouter(io) {
    * Create a new 4-digit PIN linked to a Client/Project Name, Custom Instructions, and Persona.
    */
   router.post('/pins', requireAdminAuth, (req, res) => {
-    const { pin, client_name, project_name, custom_instructions, persona } = req.body || {};
+    const {
+      pin,
+      client_name,
+      project_name,
+      project_group,
+      participant_role,
+      custom_instructions,
+      persona
+    } = req.body || {};
     const cleanPin = String(pin || '').trim();
 
     if (!/^\d{4}$/.test(cleanPin)) {
@@ -111,8 +126,10 @@ module.exports = function createAdminRouter(io) {
       pin: cleanPin,
       client_name,
       project_name,
+      project_group: project_group || project_name,
+      participant_role: participant_role || 'العميل الرئيسي (Project Owner)',
       custom_instructions: custom_instructions || '',
-      persona: persona || 'friendly_consultant'
+      persona: persona || 'adaptive_smart'
     });
 
     io.to('dev_monitors').emit('admin:pins_updated', PinRepo.getAll());
@@ -125,7 +142,16 @@ module.exports = function createAdminRouter(io) {
    */
   router.put('/pins/:id', requireAdminAuth, (req, res) => {
     const { id } = req.params;
-    const { pin, client_name, project_name, custom_instructions, persona, status } = req.body || {};
+    const {
+      pin,
+      client_name,
+      project_name,
+      project_group,
+      participant_role,
+      custom_instructions,
+      persona,
+      status
+    } = req.body || {};
 
     if (pin !== undefined) {
       const cleanPin = String(pin).trim();
@@ -142,20 +168,22 @@ module.exports = function createAdminRouter(io) {
       pin: pin !== undefined ? String(pin).trim() : undefined,
       client_name,
       project_name,
+      project_group,
+      participant_role,
       custom_instructions,
       persona,
       status
     });
 
     if (!updated) {
-      // If the PIN record was deleted earlier while the form was still in edit mode,
-      // gracefully create it as a new PIN if full creation details are present!
       if (pin && client_name && project_name) {
         const cleanPin = String(pin).trim();
         const created = PinRepo.create({
           pin: cleanPin,
           client_name,
           project_name,
+          project_group: project_group || project_name,
+          participant_role: participant_role || 'العميل الرئيسي (Project Owner)',
           custom_instructions: custom_instructions || '',
           persona: persona || 'adaptive_smart'
         });
@@ -253,14 +281,17 @@ module.exports = function createAdminRouter(io) {
     const welcomeText = buildContextAwareWelcomeMessage({
       clientName: pinRecord.client_name,
       projectName: pinRecord.project_name,
-      customInstructions: pinRecord.custom_instructions,
+      participantRole: pinRecord.participant_role,
       persona: pinRecord.persona
     });
     const welcomeMsg = MessageRepo.create({
       pin_id: id,
       sender: 'ai',
       content: welcomeText,
-      is_internal: 0
+      is_internal: 0,
+      metadata: {
+        choices: getDefaultWelcomeChoices()
+      }
     });
 
     io.to(`pin:${id}`).emit('chat:reset', { messages: [welcomeMsg] });

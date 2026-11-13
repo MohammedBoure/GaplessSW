@@ -1,14 +1,21 @@
 /**
  * Developer Co-Pilot Mode (/dev) API Routes
  * Handles:
- * - Real-time session inspection (including internal dev notes and metadata)
- * - Ghost Mode: Send messages directly into the client's chat appearing as the AI
+ * - Real-time session inspection (including internal dev notes, metadata, and project groups)
+ * - Hierarchical Project Knowledge Tree inspection (`/api/dev/projects-tree`)
+ * - Standalone Developer AI Consultant Chat (`/api/dev/ai-threads` & `/api/dev/ai-threads/:threadId/message`)
+ * - Ghost Mode: Send messages directly into the client's chat appearing as the AI (with optional Choice Chips)
  * - Secret Notes: Inject `[DEV_NOTE: ...]` prompts into `agy` to guide its questions without the client seeing the note
- * - Trigger AI Follow-up: Optional immediate `agy` turn after a secret note
  * - One-Click PRD: Prompt `agy` with `[GENERATE_PRD]` to compile a full, structured Product Requirements Document
  */
 const express = require('express');
-const { PinRepo, MessageRepo, normalizeArabicJeem } = require('../db/repository');
+const {
+  PinRepo,
+  MessageRepo,
+  ProjectTreeRepo,
+  DevAiRepo,
+  normalizeArabicJeem
+} = require('../db/repository');
 const { requireAdminAuth } = require('../security/auth');
 const { sanitizeDevNote } = require('../security/sanitizer');
 const agyManager = require('../services/agyManager');
@@ -18,19 +25,36 @@ module.exports = function createDevRouter(io) {
 
   /**
    * GET /api/dev/sessions
-   * Lists all client sessions with their full message & dev_note counts.
+   * Lists all client sessions, grouped projects, and engine status.
    */
   router.get('/sessions', requireAdminAuth, (_req, res) => {
     const pins = PinRepo.getAll();
+    const projectGroups = PinRepo.getAllProjectGroups();
     res.json({
       sessions: pins,
+      projectGroups,
       engineStatus: agyManager.getStatus()
     });
   });
 
   /**
+   * GET /api/dev/projects-tree
+   * Returns the hierarchical project knowledge tree for a specific project_group (or all project groups).
+   */
+  router.get('/projects-tree', requireAdminAuth, (req, res) => {
+    const groupName = req.query.project_group;
+    if (groupName) {
+      const tree = ProjectTreeRepo.buildProjectTreeData(String(groupName));
+      return res.json({ tree });
+    }
+    const allGroups = PinRepo.getAllProjectGroups();
+    const trees = allGroups.map((g) => ProjectTreeRepo.buildProjectTreeData(g.project_group));
+    res.json({ trees });
+  });
+
+  /**
    * GET /api/dev/sessions/:pinId
-   * Returns full session details including internal `[DEV_NOTE: ...]` items and any generated PRD.
+   * Returns full session details including internal `[DEV_NOTE: ...]` items, linked project tree, and any generated PRD.
    */
   router.get('/sessions/:pinId', requireAdminAuth, (req, res) => {
     const { pinId } = req.params;
@@ -40,19 +64,24 @@ module.exports = function createDevRouter(io) {
     }
 
     const messages = MessageRepo.getByPinId(pinId, true); // includeInternal = true
+    const projectGroup = pinRecord.project_group || pinRecord.project_name;
+    const projectTree = ProjectTreeRepo.buildProjectTreeData(projectGroup);
+
     res.json({
       session: pinRecord,
-      messages
+      messages,
+      projectTree
     });
   });
 
   /**
    * POST /api/dev/sessions/:pinId/ghost
    * Ghost Mode: Sends a message directly into the client's chat appearing seamlessly as the AI.
+   * Supports optional `choices` array so the developer can also attach interactive quick-reply buttons!
    */
   router.post('/sessions/:pinId/ghost', requireAdminAuth, (req, res) => {
     const { pinId } = req.params;
-    const { content } = req.body || {};
+    const { content, choices } = req.body || {};
 
     const pinRecord = PinRepo.getById(pinId);
     if (!pinRecord) {
@@ -64,8 +93,17 @@ module.exports = function createDevRouter(io) {
       return res.status(400).json({ error: 'محتوى رسالة Ghost Mode مطلوب.' });
     }
 
-    // Stored with sender = 'ai' so the client sees it identically to an AI message,
-    // while metadata records ghostMode: true for developer Co-Pilot visibility.
+    // Parse choices if passed as array or pipe-separated string or [CHOICES: ...] inside text
+    let parsedChoices = [];
+    if (Array.isArray(choices)) {
+      parsedChoices = choices.map((c) => normalizeArabicJeem(String(c).trim())).filter(Boolean);
+    } else if (typeof choices === 'string' && choices.trim()) {
+      parsedChoices = choices
+        .split('|')
+        .map((c) => normalizeArabicJeem(c.trim()))
+        .filter(Boolean);
+    }
+
     const ghostMsg = MessageRepo.create({
       pin_id: pinId,
       sender: 'ai',
@@ -73,11 +111,11 @@ module.exports = function createDevRouter(io) {
       is_internal: 0,
       metadata: {
         ghostMode: true,
-        author: req.admin?.username || 'developer'
+        author: req.admin?.username || 'developer',
+        choices: parsedChoices
       }
     });
 
-    // Emit to the client room (appears as AI) and dev room (shows Ghost badge)
     io.to(`pin:${pinId}`).emit('chat:message', ghostMsg);
     io.to('dev_monitors').emit('dev:chat_message', { pinId, message: ghostMsg });
 
@@ -107,7 +145,6 @@ module.exports = function createDevRouter(io) {
         return res.status(400).json({ error: 'محتوى الملاحظة السرية مطلوب.' });
       }
 
-      // Save internal developer note (is_internal = 1 -> never sent to client API or client socket room)
       const noteMsg = MessageRepo.create({
         pin_id: pinId,
         sender: 'dev_note',
@@ -119,7 +156,6 @@ module.exports = function createDevRouter(io) {
         }
       });
 
-      // Notify ONLY developer Co-Pilot monitors
       io.to('dev_monitors').emit('dev:chat_message', { pinId, message: noteMsg });
 
       let aiFollowUp = null;
@@ -129,7 +165,7 @@ module.exports = function createDevRouter(io) {
 
         const agyResult = await agyManager.runAgyTurn({
           pinId,
-          userSafeWrappedPrompt: `[DEV_NOTE: ${cleanNote}]\nPlease ask the client 1-2 natural follow-up questions in Arabic guided by this developer note, without revealing that you received an internal developer note.`,
+          userSafeWrappedPrompt: `[DEV_NOTE: ${cleanNote}]\nPlease ask the client 1-2 natural follow-up questions in Arabic guided by this developer note, without revealing that you received an internal developer note. Include [CHOICES: ...] at the end if appropriate.`,
           isPrdGeneration: false
         });
 
@@ -140,7 +176,8 @@ module.exports = function createDevRouter(io) {
           is_internal: 0,
           metadata: {
             engine: agyResult.engine,
-            guidedByDevNote: noteMsg.id
+            guidedByDevNote: noteMsg.id,
+            choices: agyResult.choices || []
           }
         });
 
@@ -201,6 +238,105 @@ module.exports = function createDevRouter(io) {
       console.error('[DevPrdRoute Error]:', err);
       io.to('dev_monitors').emit('dev:prd_generating', { pinId: req.params.pinId, isGenerating: false });
       res.status(500).json({ error: 'حدث خطأ أثناء توليد وثيقة المتطلبات (PRD).' });
+    }
+  });
+
+  // ============================================================================
+  // Standalone Developer AI Assistant Routes (/api/dev/ai-threads)
+  // ============================================================================
+
+  /**
+   * GET /api/dev/ai-threads
+   * Lists all standalone developer AI consultation threads (creates a default one if none exist).
+   */
+  router.get('/ai-threads', requireAdminAuth, (_req, res) => {
+    let threads = DevAiRepo.getAllThreads();
+    if (threads.length === 0) {
+      DevAiRepo.createThread({ title: 'مساحة الاستشارة التقنية العامة', project_group: null });
+      threads = DevAiRepo.getAllThreads();
+    }
+    res.json({ threads });
+  });
+
+  /**
+   * POST /api/dev/ai-threads
+   * Creates a new standalone developer AI thread (optionally linked to a project_group tree).
+   */
+  router.post('/ai-threads', requireAdminAuth, (req, res) => {
+    const { title, project_group } = req.body || {};
+    const thread = DevAiRepo.createThread({
+      title: title || (project_group ? `تحليل مشروع: ${project_group}` : 'استشارة تقنية جديدة'),
+      project_group: project_group || null
+    });
+    const messages = DevAiRepo.getMessages(thread.id);
+    res.status(201).json({ thread, messages });
+  });
+
+  /**
+   * GET /api/dev/ai-threads/:threadId
+   * Fetches messages for a specific standalone developer AI thread.
+   */
+  router.get('/ai-threads/:threadId', requireAdminAuth, (req, res) => {
+    const thread = DevAiRepo.getThreadById(req.params.threadId);
+    if (!thread) {
+      return res.status(404).json({ error: 'المحادثة غير موجودة.' });
+    }
+    const messages = DevAiRepo.getMessages(thread.id);
+    res.json({ thread, messages });
+  });
+
+  /**
+   * DELETE /api/dev/ai-threads/:threadId
+   */
+  router.delete('/ai-threads/:threadId', requireAdminAuth, (req, res) => {
+    DevAiRepo.deleteThread(req.params.threadId);
+    res.json({ success: true });
+  });
+
+  /**
+   * POST /api/dev/ai-threads/:threadId/message
+   * Sends a direct developer question to `agy` and returns the AI response.
+   */
+  router.post('/ai-threads/:threadId/message', requireAdminAuth, async (req, res) => {
+    try {
+      const { threadId } = req.params;
+      const { content } = req.body || {};
+      const thread = DevAiRepo.getThreadById(threadId);
+      if (!thread) {
+        return res.status(404).json({ error: 'محادثة المطور غير موجودة.' });
+      }
+
+      const cleanPrompt = normalizeArabicJeem(String(content || '').trim());
+      if (!cleanPrompt) {
+        return res.status(400).json({ error: 'يرجى كتابة سؤالك أو طلبك.' });
+      }
+
+      const devMsg = DevAiRepo.addMessage({
+        thread_id: threadId,
+        sender: 'developer',
+        content: cleanPrompt
+      });
+
+      const agyRes = await agyManager.runDevAssistantTurn({
+        threadId,
+        developerPrompt: cleanPrompt
+      });
+
+      const aiMsg = DevAiRepo.addMessage({
+        thread_id: threadId,
+        sender: 'ai',
+        content: agyRes.response,
+        metadata: { engine: agyRes.engine }
+      });
+
+      res.json({
+        success: true,
+        developerMessage: devMsg,
+        aiMessage: aiMsg
+      });
+    } catch (err) {
+      console.error('[DevAiThreadMessage Error]:', err);
+      res.status(500).json({ error: 'حدث خطأ أثناء التواصل مع الذكاء الاصطناعي.' });
     }
   });
 

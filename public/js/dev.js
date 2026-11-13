@@ -2,10 +2,12 @@
  * Gapless Developer Co-Pilot Mode Logic (public/js/dev.js)
  *
  * Features:
- * - Real-time monitoring of all client sessions
- * - Ghost Mode: Inject messages directly into the client's chat appearing as the AI
- * - Secret Notes: Inject `[DEV_NOTE: ...]` into `agy` to guide its questions without the client seeing the note
- * - One-Click PRD: Prompt `agy` with `[GENERATE_PRD]` to compile a structured Product Requirements Document
+ * - Grouped Multi-User Project Sidebar (shows shared project groups & connected participant chats)
+ * - Ghost Mode (with optional quick-choice chips for the client)
+ * - Secret Notes (`[DEV_NOTE: ...]`)
+ * - Standalone Developer AI Chat (`tabPaneDevAi`) to consult with AI independently at any moment
+ * - Hierarchical Project Knowledge Tree Viewer (`tabPaneProjectTree`) showing organized multi-user data
+ * - One-Click PRD (`[GENERATE_PRD]`) synthesizing all connected chats in the project tree
  */
 (function () {
   const devAuthOverlay = document.getElementById('devAuthOverlay');
@@ -29,10 +31,31 @@
   const modeTabNote = document.getElementById('modeTabNote');
   const triggerAiNowLabel = document.getElementById('triggerAiNowLabel');
   const triggerAiNowCheckbox = document.getElementById('triggerAiNowCheckbox');
+  const ghostChoicesRow = document.getElementById('ghostChoicesRow');
+  const ghostChoicesInput = document.getElementById('ghostChoicesInput');
   const copilotActionForm = document.getElementById('copilotActionForm');
   const copilotInput = document.getElementById('copilotInput');
   const copilotSubmitBtn = document.getElementById('copilotSubmitBtn');
 
+  // Right Workbench Tabs
+  const panelTabBtns = Array.from(document.querySelectorAll('.panel-tab-btn[data-panel-tab]'));
+  const tabPaneDevAi = document.getElementById('tabPaneDevAi');
+  const tabPaneProjectTree = document.getElementById('tabPaneProjectTree');
+  const tabPanePrdDoc = document.getElementById('tabPanePrdDoc');
+
+  // Standalone Developer AI Chat Elements
+  const devAiThreadSelect = document.getElementById('devAiThreadSelect');
+  const newDevAiThreadBtn = document.getElementById('newDevAiThreadBtn');
+  const devAiMessagesContainer = document.getElementById('devAiMessagesContainer');
+  const devAiComposerForm = document.getElementById('devAiComposerForm');
+  const devAiInput = document.getElementById('devAiInput');
+  const devAiSendBtn = document.getElementById('devAiSendBtn');
+
+  // Project Tree Elements
+  const projectTreeContainer = document.getElementById('projectTreeContainer');
+  const refreshTreeBtn = document.getElementById('refreshTreeBtn');
+
+  // PRD Elements
   const prdViewerContainer = document.getElementById('prdViewerContainer');
   const copyPrdBtn = document.getElementById('copyPrdBtn');
   const downloadPrdBtn = document.getElementById('downloadPrdBtn');
@@ -41,9 +64,14 @@
   let sessions = [];
   let onlinePinIds = new Set();
   let selectedPinId = new URLSearchParams(window.location.search).get('pinId') || null;
-  let currentMode = 'ghost'; // 'ghost' | 'note'
+  let currentProjectGroup = null;
+  let currentMode = 'ghost';
   let currentPrdMarkdown = '';
   let renderedMsgIds = new Set();
+
+  // Standalone Dev AI state
+  let devAiThreads = [];
+  let activeDevThreadId = null;
 
   const socket = io();
 
@@ -56,7 +84,8 @@
     return normalizeTextJeem(String(str || ''))
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 
   function formatMarkdownRich(md) {
@@ -67,7 +96,7 @@
       .replace(/^## (.*)$/gm, '<h2>$1</h2>')
       .replace(/^# (.*)$/gm, '<h1>$1</h1>')
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;font-family:var(--font-mono);">$1</code>')
+      .replace(/`([^`]+)`/g, '<code style="background:var(--bg-elevated);padding:2px 6px;border-radius:4px;font-family:var(--font-mono);font-size:0.84em;">$1</code>')
       .replace(/\n/g, '<br/>');
   }
 
@@ -78,10 +107,26 @@
     };
   }
 
-  // Normalize '٩' -> 'ج' in developer input
-  copilotInput.addEventListener('input', () => {
-    const fixed = normalizeTextJeem(copilotInput.value);
-    if (fixed !== copilotInput.value) copilotInput.value = fixed;
+  [copilotInput, ghostChoicesInput, devAiInput].forEach((inp) => {
+    if (!inp) return;
+    inp.addEventListener('input', () => {
+      const fixed = normalizeTextJeem(inp.value);
+      if (fixed !== inp.value) inp.value = fixed;
+    });
+  });
+
+  // Switch Right Workbench Tabs
+  function switchRightTab(tabName) {
+    panelTabBtns.forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.panelTab === tabName);
+    });
+    tabPaneDevAi.classList.toggle('hidden', tabName !== 'dev-ai');
+    tabPaneProjectTree.classList.toggle('hidden', tabName !== 'project-tree');
+    tabPanePrdDoc.classList.toggle('hidden', tabName !== 'prd-doc');
+  }
+
+  panelTabBtns.forEach((btn) => {
+    btn.addEventListener('click', () => switchRightTab(btn.dataset.panelTab));
   });
 
   // ============================================================================
@@ -110,6 +155,7 @@
       devAuthOverlay.classList.add('hidden');
       socket.emit('dev:join', { token: adminToken });
       await loadSessions();
+      await loadDevAiThreads();
     } catch {
       devLoginError.textContent = 'خطأ في الاتصال بالخادم.';
       devLoginError.classList.remove('hidden');
@@ -124,7 +170,7 @@
   });
 
   // ============================================================================
-  // 2. Load Sessions & Active Session Details
+  // 2. Load Sessions (Grouped by Shared Project) & Active Session Details
   // ============================================================================
   async function loadSessions() {
     try {
@@ -152,32 +198,60 @@
 
   function renderSessionsSidebar() {
     if (!sessions.length) {
-      devSessionsList.innerHTML = `<div style="padding:18px; color:var(--text-muted); font-size:0.84rem;">لا توجد جلسات حالياً.</div>`;
+      devSessionsList.innerHTML = `<div style="padding:18px; color:var(--text-muted); font-size:0.82rem;">لا توجد جلسات حالياً.</div>`;
       return;
     }
 
-    devSessionsList.innerHTML = sessions
-      .map((s) => {
-        const isOnline = onlinePinIds.has(s.id);
-        const isSelected = s.id === selectedPinId;
-        return `
-          <div class="session-item ${isSelected ? 'active' : ''}" data-pin-id="${escapeHtml(s.id)}">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <span class="pin-code-pill" style="font-size:0.82rem; padding:2px 8px;">#${escapeHtml(s.pin)}</span>
-              <span style="font-size:0.74rem; color:${isOnline ? 'var(--accent-emerald)' : 'var(--text-muted)'};">
-                ${isOnline ? '● متصل الآن' : '○ غير متصل'}
-              </span>
+    // Group sessions by project_group
+    const groupsMap = new Map();
+    for (const s of sessions) {
+      const gName = (s.project_group || s.project_name || 'مشروع عام').trim();
+      if (!groupsMap.has(gName)) groupsMap.set(gName, []);
+      groupsMap.get(gName).push(s);
+    }
+
+    const htmlBlocks = [];
+    for (const [groupName, members] of groupsMap.entries()) {
+      const membersHtml = members
+        .map((s) => {
+          const isOnline = onlinePinIds.has(s.id);
+          const isSelected = s.id === selectedPinId;
+          return `
+            <div class="session-item ${isSelected ? 'active' : ''}" data-pin-id="${escapeHtml(s.id)}">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="pin-code-pill" style="font-size:0.78rem; padding:2px 8px;">#${escapeHtml(s.pin)}</span>
+                <span style="font-size:0.72rem; font-weight:600; color:${isOnline ? 'var(--accent-emerald)' : 'var(--text-muted)'};">
+                  ${isOnline ? '● متصل الآن' : '○ غير متصل'}
+                </span>
+              </div>
+              <div style="font-weight:700; font-size:0.9rem; margin-top:5px; color:var(--text-primary);">
+                ${escapeHtml(s.client_name)}
+              </div>
+              <div style="font-size:0.75rem; color:var(--accent-purple); font-weight:600;">
+                ${escapeHtml(s.participant_role || 'العميل الرئيسي')}
+              </div>
+              <div style="display:flex; gap:10px; margin-top:5px; font-size:0.72rem; color:var(--text-muted);">
+                <span>${s.message_count || 0} رسالة</span>
+                <span>•</span>
+                <span>${s.dev_note_count || 0} ملاحظات سرية</span>
+              </div>
             </div>
-            <div style="font-weight:700; font-size:0.92rem; margin-top:6px;">${escapeHtml(s.client_name)}</div>
-            <div style="font-size:0.8rem; color:var(--accent-secondary);">${escapeHtml(s.project_name)}</div>
-            <div style="display:flex; gap:10px; margin-top:6px; font-size:0.74rem; color:var(--text-muted);">
-              <span>💬 ${s.message_count || 0}</span>
-              <span>🕵️‍♂️ ${s.dev_note_count || 0} ملاحظات سرية</span>
-            </div>
+          `;
+        })
+        .join('');
+
+      htmlBlocks.push(`
+        <div class="project-group-block">
+          <div class="project-group-header">
+            <span>📁 ${escapeHtml(groupName)}</span>
+            <span class="badge badge-persona" style="font-size:0.68rem;">${members.length} مشارك</span>
           </div>
-        `;
-      })
-      .join('');
+          ${membersHtml}
+        </div>
+      `);
+    }
+
+    devSessionsList.innerHTML = htmlBlocks.join('');
   }
 
   devSessionsList.addEventListener('click', (e) => {
@@ -197,9 +271,10 @@
       if (!res.ok) return;
       const data = await res.json();
       const s = data.session;
+      currentProjectGroup = s.project_group || s.project_name;
 
-      activeSessionHeaderTitle.textContent = `${normalizeTextJeem(s.client_name)} — ${normalizeTextJeem(s.project_name)} (PIN: #${s.pin})`;
-      activeSessionHeaderMeta.textContent = `التوجيه الإداري: ${normalizeTextJeem(s.custom_instructions || 'افتراضي')} | الشخصية: ${s.persona}`;
+      activeSessionHeaderTitle.textContent = `${normalizeTextJeem(s.client_name)} (${normalizeTextJeem(s.participant_role || 'العميل الرئيسي')}) — مشروع: ${normalizeTextJeem(currentProjectGroup)}`;
+      activeSessionHeaderMeta.textContent = `PIN: #${s.pin} | السياق السري (مخفي عن العميل): ${normalizeTextJeem(s.custom_instructions || 'لا يوجد')}`;
 
       generatePrdBtn.disabled = false;
       if (resetSessionChatBtn) resetSessionChatBtn.disabled = false;
@@ -211,6 +286,9 @@
       (data.messages || []).forEach(appendDevMessageBubble);
 
       renderPrdContent(s.prd_markdown || '');
+      if (data.projectTree) {
+        renderProjectTree(data.projectTree);
+      }
     } catch (err) {
       console.error('Error selecting session:', err);
     }
@@ -234,7 +312,7 @@
       row.innerHTML = `
         <div class="msg-bubble">
           <div style="font-weight:700; color:var(--accent-amber); margin-bottom:4px;">
-            🕵️‍♂️ [DEV_NOTE: ملاحظة سرية موجهة لمحرك agy — مخفية تماماً عن العميل]
+            [DEV_NOTE: توجيه سري للمحرك — مخفي عن المستخدم]
           </div>
           <div>${formatMarkdownRich(msg.content)}</div>
         </div>
@@ -244,10 +322,22 @@
 
       let badges = '';
       if (meta.ghostMode) {
-        badges += `<span class="badge" style="background:rgba(168,85,247,0.22); color:#d8b4fe; border:1px solid #a855f7; margin-right:6px;">👻 Ghost Mode (أُرسلت من المطور كـ AI)</span>`;
+        badges += `<span class="badge badge-role" style="margin-right:6px;">Ghost Mode (رد المطور كـ AI)</span>`;
       }
       if (meta.flagged) {
-        badges += `<span class="badge badge-revoked" style="margin-right:6px;">🚨 تم اعتراض محاولة حقن أوامر (${escapeHtml((meta.reasons || []).join(', '))})</span>`;
+        badges += `<span class="badge badge-revoked" style="margin-right:6px;">اعتراض حقن أوامر (${escapeHtml((meta.reasons || []).join(', '))})</span>`;
+      }
+
+      let choicesPreview = '';
+      if (Array.isArray(meta.choices) && meta.choices.length > 0) {
+        choicesPreview = `
+          <div style="margin-top:8px; padding-top:8px; border-top:1px dashed var(--border-subtle); font-size:0.75rem; color:var(--text-secondary);">
+            <span>الخيارات التفاعلية المعروضة للمستخدم:</span>
+            <div style="display:flex; flex-wrap:wrap; gap:5px; margin-top:4px;">
+              ${meta.choices.map((c) => `<span class="badge badge-persona">${escapeHtml(c)}</span>`).join('')}
+            </div>
+          </div>
+        `;
       }
 
       let mediaHtml = '';
@@ -259,13 +349,14 @@
         `;
       }
 
-      const who = msg.sender === 'client' ? '👤 العميل' : '🤖 الذكاء الاصطناعي (ScopeMaster)';
+      const who = msg.sender === 'client' ? 'المستخدم' : 'المستشار الذكي (ScopeMaster)';
       const timeStr = new Date(msg.created_at).toLocaleTimeString('ar-DZ', { hour: '2-digit', minute: '2-digit' });
 
       row.innerHTML = `
         <div class="msg-bubble">
           ${mediaHtml}
           <div>${formatMarkdownRich(msg.content)}</div>
+          ${choicesPreview}
         </div>
         <div class="msg-meta">
           <span>${who}</span>
@@ -281,7 +372,210 @@
   }
 
   // ============================================================================
-  // 3. Ghost Mode & Secret Notes ([DEV_NOTE: ...])
+  // 3. Hierarchical Project Knowledge Tree Renderer
+  // ============================================================================
+  function renderProjectTree(tree) {
+    if (!tree || !Array.isArray(tree.participants_tree)) {
+      projectTreeContainer.innerHTML = `<div style="color:var(--text-muted); text-align:center; padding-top:40px;">اختر جلسة لعرض الشجرة الشاملة للمشروع.</div>`;
+      return;
+    }
+
+    const nodesHtml = tree.participants_tree
+      .map((node) => {
+        const inputsHtml =
+          node.key_client_inputs && node.key_client_inputs.length > 0
+            ? `<ul class="tree-leaf-list">
+                ${node.key_client_inputs
+                  .map((inp) => `<li>"${escapeHtml(inp.content)}"</li>`)
+                  .join('')}
+               </ul>`
+            : `<div style="color:var(--text-muted); margin-top:4px;">لم يدخل إجابات نصية بعد.</div>`;
+
+        return `
+          <div class="tree-node">
+            <div class="tree-node-header" onclick="this.nextElementSibling.classList.toggle('hidden')">
+              <div>
+                <span style="color:var(--brand-primary);">├─ ${escapeHtml(node.client_name)}</span>
+                <span class="badge badge-role" style="margin-right:6px;">${escapeHtml(node.participant_role)}</span>
+              </div>
+              <span class="pin-code-pill" style="font-size:0.75rem; padding:1px 6px;">#${escapeHtml(node.pin)}</span>
+            </div>
+            <div class="tree-node-body">
+              <div style="margin-bottom:6px; color:var(--text-secondary);">
+                <strong>السياق السري الخاص بهذا المشارك:</strong> ${escapeHtml(node.custom_instructions_internal || 'غير محدد')}
+              </div>
+              <div>
+                <strong>مدخلات وإجابات هذا المشارك (${node.stats.client_responses}):</strong>
+                ${inputsHtml}
+              </div>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+
+    projectTreeContainer.innerHTML = `
+      <div style="margin-bottom:14px; padding:12px; background:var(--bg-secondary); border:1px solid var(--border-strong); border-radius:var(--radius-sm);">
+        <div style="font-weight:800; font-size:0.95rem; color:var(--text-primary);">
+          🌳 الجذر الشجري للمشروع: ${escapeHtml(tree.project_group)}
+        </div>
+        <div style="font-size:0.76rem; color:var(--text-secondary); margin-top:4px;">
+          إجمالي المشاركين المتصلين: <strong>${tree.total_participants}</strong> • يقرأ محرك <code>agy</code> هذه الشجرة تلقائياً لربط المتطلبات ببعضها.
+        </div>
+      </div>
+      ${nodesHtml}
+    `;
+  }
+
+  if (refreshTreeBtn) {
+    refreshTreeBtn.addEventListener('click', async () => {
+      if (!currentProjectGroup) return;
+      const res = await fetch(`/api/dev/projects-tree?project_group=${encodeURIComponent(currentProjectGroup)}`, {
+        headers: authHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        renderProjectTree(data.tree);
+      }
+    });
+  }
+
+  // ============================================================================
+  // 4. Standalone Developer AI Assistant (Direct Dev <-> AI Chat)
+  // ============================================================================
+  async function loadDevAiThreads() {
+    try {
+      const res = await fetch('/api/dev/ai-threads', { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      devAiThreads = data.threads || [];
+      renderDevAiThreadOptions();
+
+      if (!activeDevThreadId && devAiThreads.length > 0) {
+        await selectDevAiThread(devAiThreads[0].id);
+      } else if (activeDevThreadId) {
+        await selectDevAiThread(activeDevThreadId);
+      }
+    } catch (err) {
+      console.error('Failed to load Dev AI threads:', err);
+    }
+  }
+
+  function renderDevAiThreadOptions() {
+    if (!devAiThreadSelect) return;
+    devAiThreadSelect.innerHTML = devAiThreads
+      .map(
+        (t) =>
+          `<option value="${escapeHtml(t.id)}" ${t.id === activeDevThreadId ? 'selected' : ''}>${escapeHtml(t.title)}${t.project_group ? ` (${escapeHtml(t.project_group)})` : ''}</option>`
+      )
+      .join('');
+  }
+
+  async function selectDevAiThread(threadId) {
+    activeDevThreadId = threadId;
+    renderDevAiThreadOptions();
+
+    const res = await fetch(`/api/dev/ai-threads/${encodeURIComponent(threadId)}`, {
+      headers: authHeaders()
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    devAiMessagesContainer.innerHTML = '';
+    (data.messages || []).forEach(appendDevAiMessageBubble);
+  }
+
+  function appendDevAiMessageBubble(msg) {
+    if (!msg) return;
+    const row = document.createElement('div');
+    const isDev = msg.sender === 'developer';
+    row.className = `msg-row ${isDev ? 'client' : 'ai'}`;
+    row.style.maxWidth = '92%';
+
+    const who = isDev ? 'أنت (المطور)' : 'المستشار الهندسي الذكي (Dev AI)';
+    const timeStr = new Date(msg.created_at).toLocaleTimeString('ar-DZ', { hour: '2-digit', minute: '2-digit' });
+
+    row.innerHTML = `
+      <div class="msg-bubble" style="font-size:0.84rem; padding:10px 13px;">
+        <div>${formatMarkdownRich(msg.content)}</div>
+      </div>
+      <div class="msg-meta">
+        <span>${who}</span>
+        <span>•</span>
+        <span>${timeStr}</span>
+      </div>
+    `;
+    devAiMessagesContainer.appendChild(row);
+    devAiMessagesContainer.scrollTop = devAiMessagesContainer.scrollHeight;
+  }
+
+  if (devAiThreadSelect) {
+    devAiThreadSelect.addEventListener('change', () => {
+      selectDevAiThread(devAiThreadSelect.value);
+    });
+  }
+
+  if (newDevAiThreadBtn) {
+    newDevAiThreadBtn.addEventListener('click', async () => {
+      const linkToCurrent = currentProjectGroup
+        ? confirm(`هل تريد ربط هذه المحادثة الاستشارية بشجرة المشروع الحالي (${currentProjectGroup})؟\nاضغط OK لربطها بالمشروع، أو Cancel لمحادثة حرة ومنفصلة تماماً.`)
+        : false;
+
+      const title = prompt(
+        'عنوان المحادثة مع الذكاء الاصطناعي:',
+        linkToCurrent ? `نقاش تقني حول ${currentProjectGroup}` : 'استشارة تقنية عامة'
+      );
+      if (!title) return;
+
+      const res = await fetch('/api/dev/ai-threads', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          title,
+          project_group: linkToCurrent ? currentProjectGroup : null
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        activeDevThreadId = data.thread.id;
+        await loadDevAiThreads();
+      }
+    });
+  }
+
+  if (devAiComposerForm) {
+    devAiComposerForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!activeDevThreadId) return;
+      const content = normalizeTextJeem(devAiInput.value.trim());
+      if (!content) return;
+
+      devAiSendBtn.disabled = true;
+      devAiSendBtn.textContent = '...';
+      devAiInput.value = '';
+
+      try {
+        const res = await fetch(`/api/dev/ai-threads/${encodeURIComponent(activeDevThreadId)}/message`, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ content })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          if (data.developerMessage) appendDevAiMessageBubble(data.developerMessage);
+          if (data.aiMessage) appendDevAiMessageBubble(data.aiMessage);
+        }
+      } catch {
+        alert('تعذر الاتصال بالمساعد الذكي.');
+      } finally {
+        devAiSendBtn.disabled = false;
+        devAiSendBtn.textContent = 'إرسال';
+        devAiInput.focus();
+      }
+    });
+  }
+
+  // ============================================================================
+  // 5. Ghost Mode & Secret Notes ([DEV_NOTE: ...])
   // ============================================================================
   function setCoPilotMode(mode) {
     currentMode = mode;
@@ -289,16 +583,18 @@
       modeTabGhost.className = 'btn btn-primary btn-sm';
       modeTabNote.className = 'btn btn-secondary btn-sm';
       triggerAiNowLabel.classList.add('hidden');
-      copilotInput.placeholder = 'اكتب رسالتك المباشرة للعميل لتظهر فوراً في محادثته باسم الذكاء الاصطناعي (Ghost Mode)...';
+      if (ghostChoicesRow) ghostChoicesRow.classList.remove('hidden');
+      copilotInput.placeholder = 'اكتب رسالتك المباشرة للمستخدم لتظهر فوراً في محادثته باسم الذكاء الاصطناعي (Ghost Mode)...';
       copilotSubmitBtn.className = 'btn btn-primary';
-      copilotSubmitBtn.textContent = '👻 إرسال كـ AI';
+      copilotSubmitBtn.innerHTML = '<span>إرسال كـ AI</span>';
     } else {
       modeTabGhost.className = 'btn btn-secondary btn-sm';
       modeTabNote.className = 'btn btn-amber btn-sm';
       triggerAiNowLabel.classList.remove('hidden');
-      copilotInput.placeholder = 'اكتب توجيهك السري لـ agy (مثال: اسأل العميل عن بوابة الدفع BaridiMob وحدود الميزانية)... سيتم حقنها بصيغة [DEV_NOTE: ...] دون أن يراها العميل.';
+      if (ghostChoicesRow) ghostChoicesRow.classList.add('hidden');
+      copilotInput.placeholder = 'اكتب توجيهك السري لـ agy (مثال: اسأل المستخدم عن تقسيم المخزن)... سيتم حقنها بصيغة [DEV_NOTE: ...] دون أن يراها المستخدم.';
       copilotSubmitBtn.className = 'btn btn-amber';
-      copilotSubmitBtn.textContent = '🕵️‍♂️ حقن [DEV_NOTE]';
+      copilotSubmitBtn.innerHTML = '<span>حقن [DEV_NOTE]</span>';
     }
   }
 
@@ -312,15 +608,18 @@
     const text = normalizeTextJeem(copilotInput.value.trim());
     if (!text) return;
 
+    const rawChoices = ghostChoicesInput ? normalizeTextJeem(ghostChoicesInput.value.trim()) : '';
+
     copilotSubmitBtn.disabled = true;
     copilotInput.value = '';
+    if (ghostChoicesInput) ghostChoicesInput.value = '';
 
     try {
       if (currentMode === 'ghost') {
         const res = await fetch(`/api/dev/sessions/${encodeURIComponent(selectedPinId)}/ghost`, {
           method: 'POST',
           headers: authHeaders(),
-          body: JSON.stringify({ content: text })
+          body: JSON.stringify({ content: text, choices: rawChoices })
         });
         const data = await res.json();
         if (res.ok && data.message) {
@@ -344,7 +643,7 @@
           loadSessions();
         }
       }
-    } catch (err) {
+    } catch {
       devTypingBanner.classList.add('hidden');
       alert('تعذر إرسال التوجيه.');
     } finally {
@@ -354,14 +653,14 @@
   });
 
   // ============================================================================
-  // 4. One-Click PRD Generation ([GENERATE_PRD])
+  // 6. One-Click PRD Generation ([GENERATE_PRD])
   // ============================================================================
   function renderPrdContent(markdown) {
     currentPrdMarkdown = normalizeTextJeem(markdown || '');
     if (!currentPrdMarkdown) {
       prdViewerContainer.innerHTML = `
         <div style="color:var(--text-muted); text-align:center; padding-top:60px;">
-          اضغط على زر <strong>"توليد وثيقة PRD بضغطة واحدة ([GENERATE_PRD])"</strong> في الأعلى لتوليد وثيقة متطلبات المنتج الكاملة من محادثة العميل وملاحظات المطورين.
+          اضغط على زر <strong>"توليد وثيقة PRD الشاملة ([GENERATE_PRD])"</strong> في الأعلى لتوليد وثيقة متطلبات المنتج الموحدة من جميع محادثات المشروع.
         </div>
       `;
       copyPrdBtn.disabled = true;
@@ -377,7 +676,7 @@
   if (resetSessionChatBtn) {
     resetSessionChatBtn.addEventListener('click', async () => {
       if (!selectedPinId) return;
-      if (!confirm('هل تريد مسح المحادثة الحالية وإعادة توليد رسالة الترحيب الذكية بناءً على معلومات العميل الأولية؟')) return;
+      if (!confirm('هل تريد مسح المحادثة الحالية وإعادة ضبط الترحيب (مع إبقاء المعلومات الأولية سرية للذكاء الاصطناعي فقط)؟')) return;
       const res = await fetch(`/api/admin/pins/${encodeURIComponent(selectedPinId)}/reset-chat`, {
         method: 'POST',
         headers: authHeaders()
@@ -391,9 +690,10 @@
 
   generatePrdBtn.addEventListener('click', async () => {
     if (!selectedPinId) return;
+    switchRightTab('prd-doc');
     generatePrdBtn.disabled = true;
-    generatePrdBtn.textContent = '⏳ جاري توليد وثيقة PRD عبر agy...';
-    prdViewerContainer.innerHTML = `<div style="text-align:center; padding-top:60px; color:var(--accent-secondary);">⚙️ يقوم محرك <code>agy</code> الآن بتحليل المحادثة والملاحظات السرية وصياغة وثيقة المتطلبات الشاملة ([GENERATE_PRD])...</div>`;
+    generatePrdBtn.innerHTML = '<span>جاري توليد وثيقة PRD عبر agy...</span>';
+    prdViewerContainer.innerHTML = `<div style="text-align:center; padding-top:60px; color:var(--brand-text);">يقوم محرك <code>agy</code> الآن بقراءة شجرة المشروع المشترك وصياغة وثيقة المتطلبات الشاملة ([GENERATE_PRD])...</div>`;
 
     try {
       const res = await fetch(`/api/dev/sessions/${encodeURIComponent(selectedPinId)}/prd`, {
@@ -410,7 +710,7 @@
       alert('حدث خطأ أثناء توليد وثيقة PRD.');
     } finally {
       generatePrdBtn.disabled = false;
-      generatePrdBtn.textContent = '📄 توليد وثيقة PRD بضغطة واحدة ([GENERATE_PRD])';
+      generatePrdBtn.innerHTML = '<span>توليد وثيقة PRD الشاملة ([GENERATE_PRD])</span>';
     }
   });
 
@@ -418,7 +718,7 @@
     if (!currentPrdMarkdown) return;
     await navigator.clipboard.writeText(currentPrdMarkdown);
     const orig = copyPrdBtn.textContent;
-    copyPrdBtn.textContent = '✅ تم النسخ!';
+    copyPrdBtn.textContent = 'تم النسخ';
     setTimeout(() => { copyPrdBtn.textContent = orig; }, 1800);
   });
 
@@ -436,7 +736,7 @@
   refreshSessionsBtn.addEventListener('click', loadSessions);
 
   // ============================================================================
-  // 5. Real-Time Socket Listeners
+  // 7. Real-Time Socket Listeners
   // ============================================================================
   socket.on('dev:online_pins', (pinIds) => {
     onlinePinIds = new Set(pinIds || []);
@@ -446,20 +746,22 @@
   socket.on('dev:chat_message', ({ pinId, message }) => {
     if (pinId === selectedPinId) {
       appendDevMessageBubble(message);
+      selectSession(selectedPinId);
+    } else {
+      loadSessions();
     }
-    loadSessions();
   });
 
   socket.on('dev:typing', ({ pinId, isTyping }) => {
     if (pinId === selectedPinId) {
-      devTypingBanner.textContent = '🤖 محرك agy يقوم بالتحليل والكتابة الآن...';
+      devTypingBanner.textContent = 'محرك agy يقوم بالتحليل والكتابة الآن...';
       devTypingBanner.classList.toggle('hidden', !isTyping);
     }
   });
 
   socket.on('dev:client_typing', ({ pinId, isTyping }) => {
     if (pinId === selectedPinId) {
-      devTypingBanner.textContent = '✍️ العميل يكتب رسالة الآن في الوقت الفعلي...';
+      devTypingBanner.textContent = 'المستخدم يكتب رسالة الآن في الوقت الفعلي...';
       devTypingBanner.classList.toggle('hidden', !isTyping);
     }
   });
@@ -470,6 +772,6 @@
     }
   });
 
-  // Initialize
   loadSessions();
+  loadDevAiThreads();
 })();

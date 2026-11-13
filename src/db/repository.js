@@ -1,7 +1,14 @@
 /**
  * Repository Data Access Layer
- * Provides clean CRUD and domain queries for PINs, Messages, Rate Limits, and Security Events.
+ * Provides clean CRUD and domain queries for:
+ * - PINs & Multi-User Linked Project Groups
+ * - Messages & Interactive Choice Chips
+ * - Hierarchical Project Knowledge Tree (for multi-participant shared projects)
+ * - Standalone Developer AI Assistant Threads
+ * - Rate Limits & Security Events
  */
+const fs = require('fs');
+const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const db = require('./connection');
 const config = require('../config');
@@ -16,27 +23,37 @@ function normalizeArabicJeem(text) {
 }
 
 /**
- * Builds a context-aware, personalized welcome message that immediately reflects
- * the Admin's Custom Instructions & Recommendations so the client never receives
- * a generic or ignorant greeting.
+ * Builds a clean, natural welcome message for a participant WITHOUT exposing
+ * or quoting the Admin's private `custom_instructions` to the client!
+ * Also attaches initial helpful quick-choice options so the client can reply with a tap or type freely.
  */
-function buildContextAwareWelcomeMessage({ clientName, projectName, customInstructions, persona }) {
+function buildContextAwareWelcomeMessage({ clientName, projectName, participantRole, persona }) {
   const cleanClient = normalizeArabicJeem(clientName || '');
   const cleanProject = normalizeArabicJeem(projectName || '');
-  const cleanContext = normalizeArabicJeem((customInstructions || '').trim());
+  const cleanRole = normalizeArabicJeem((participantRole || '').trim());
 
-  if (cleanContext) {
-    if (persona === 'concise_direct') {
-      return `مرحباً بك يا **${cleanClient}** في جلسة تحديد متطلبات **${cleanProject}**! ⚡\n\nلقد اطلعت على السياق الأولي لمشروعك: **(${cleanContext})**.\n\n**للبدء مباشرة:** كيف يسير العمل حالياً في هذه النقطة تحديداً، وما هي أهم أولوية تود حسمها أولاً؟`;
-    }
-    if (persona === 'technical_analyst') {
-      return `أهلاً بك يا **${cleanClient}** في جلسة التحليل الفني لمشروع **${cleanProject}**! 📊\n\nبناءً على المعطيات الأولية المسجلة لدينا حول المشروع:\n> ${cleanContext}\n\n**سؤالي الأول لضبط هيكلة النظام:** ما هي الأدوار ( الصلاحيات ) الأساسية للمستخدمين وكيف تتدفق العمليات اليومية بينهم؟`;
-    }
-    // Default: adaptive / friendly consultant
-    return `أهلاً بك يا **${cleanClient}** في جلسة استكشاف متطلبات مشروع **${cleanProject}**! 🚀\n\nلدي فكرة أولية عن طبيعة مشروعك (${cleanContext})، وأنا هنا لمساعدتك خطوة بخطوة وبأسلوب يناسبك لتفصيل كل ما تحتاجه بدقة (ويمكنك أيضاً إرفاق أي صور أو توضيحات في أي وقت).\n\n**للبدء من واقع عملك:** كيف تدار الأمور لديكم حالياً، وما هي أكثر نقطة تريد أن يسهلها عليك النظام الجديد؟`;
+  const roleAck =
+    cleanRole && cleanRole !== 'العميل الرئيسي (Project Owner)'
+      ? ` بصفتك **${cleanRole}** ضمن فريق العمل`
+      : '';
+
+  if (persona === 'concise_direct') {
+    return `مرحباً بك يا **${cleanClient}** في جلسة تحديد متطلبات مشروع **${cleanProject}**${roleAck}.\n\n**للبدء مباشرة:** كيف تسير طريقة العمل الحالية لديكم، وما هي أهم أولوية تريد أن يحلها النظام أولاً؟`;
+  }
+  if (persona === 'technical_analyst') {
+    return `أهلاً بك يا **${cleanClient}** في جلسة التحليل الفني لمشروع **${cleanProject}**${roleAck}.\n\n**سؤالي الأول لضبط هيكلة النظام:** ما هي العمليات الأساسية والصلاحيات التي تتعامل معها يومياً، وما هي أبرز النقاط التقنية المطلوب تغطيتها؟`;
   }
 
-  return `أهلاً بك يا **${cleanClient}** في جلسة استكشاف متطلبات مشروع **${cleanProject}**! 🚀\n\nأنا مستشار تحليل الأعمال الذكي في **Gapless**. سأساعدك خطوة بخطوة وبأسلوب بسيط ومباشر لتحديد كافة تفاصيل مشروعك.\n\n**للبدء:** هل يمكنك إعطائي فكرة سريعة بكلماتك الخاصة عن طبيعة عملك وما الذي تريد أن يحققه لك هذا النظام؟`;
+  return `أهلاً بك يا **${cleanClient}** في جلسة استكشاف متطلبات مشروع **${cleanProject}**${roleAck}.\n\nسأعمل معك خطوة بخطوة لتفصيل كل ما تحتاجه في النظام بأسلوب واضح ومباشر (ويمكنك الاختيار من الخيارات السريعة أدناه أو الكتابة بحرية وإرفاق الصور في أي وقت).\n\n**للبدء من واقع عملك:** كيف تدار الأمور لديكم حالياً، وما هي أهم نقطة تريد أن يسهلها عليك البرنامج؟`;
+}
+
+function getDefaultWelcomeChoices() {
+  return [
+    'تنظيم وإدارة المخزون والمنتجات بدقة',
+    'تسهيل المبيعات والفواتير وحسابات الزبائن',
+    'توزيع المهام والصلاحيات بين الموظفين',
+    'سأشرح لك طريقة عملنا بالتفصيل...'
+  ];
 }
 
 const PinRepo = {
@@ -58,23 +75,74 @@ const PinRepo = {
     return db.prepare('SELECT * FROM pins WHERE pin = ?').get(pinCode);
   },
 
-  create({ pin, client_name, project_name, custom_instructions = '', persona = 'adaptive_smart' }) {
+  getByProjectGroup(projectGroup) {
+    if (!projectGroup) return [];
+    return db.prepare(`
+      SELECT p.*,
+        (SELECT COUNT(*) FROM messages m WHERE m.pin_id = p.id AND m.is_internal = 0) AS message_count
+      FROM pins p
+      WHERE LOWER(TRIM(COALESCE(NULLIF(p.project_group, ''), p.project_name))) = LOWER(TRIM(?))
+      ORDER BY p.created_at ASC
+    `).all(projectGroup);
+  },
+
+  getAllProjectGroups() {
+    const pins = this.getAll();
+    const groupsMap = new Map();
+    for (const p of pins) {
+      const groupKey = (p.project_group || p.project_name || 'مشروع عام').trim();
+      if (!groupsMap.has(groupKey)) {
+        groupsMap.set(groupKey, {
+          project_group: groupKey,
+          participants: []
+        });
+      }
+      groupsMap.get(groupKey).participants.push(p);
+    }
+    return Array.from(groupsMap.values());
+  },
+
+  create({
+    pin,
+    client_name,
+    project_name,
+    project_group = '',
+    participant_role = 'العميل الرئيسي (Project Owner)',
+    custom_instructions = '',
+    persona = 'adaptive_smart'
+  }) {
     const id = `pin-${uuidv4().slice(0, 8)}`;
     const now = Date.now();
     const cleanClient = normalizeArabicJeem(client_name.trim());
     const cleanProject = normalizeArabicJeem(project_name.trim());
+    const cleanGroup = normalizeArabicJeem((project_group || project_name).trim());
+    const cleanRole = normalizeArabicJeem((participant_role || 'العميل الرئيسي (Project Owner)').trim());
     const cleanInstructions = normalizeArabicJeem(custom_instructions.trim());
 
     db.prepare(`
-      INSERT INTO pins (id, pin, client_name, project_name, custom_instructions, persona, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)
-    `).run(id, pin, cleanClient, cleanProject, cleanInstructions, persona, now, now);
+      INSERT INTO pins (
+        id, pin, client_name, project_name, project_group, participant_role,
+        custom_instructions, persona, status, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+    `).run(
+      id,
+      pin,
+      cleanClient,
+      cleanProject,
+      cleanGroup,
+      cleanRole,
+      cleanInstructions,
+      persona,
+      now,
+      now
+    );
 
-    // Seed context-aware welcome message for this PIN
+    // Seed welcome message WITHOUT exposing custom_instructions to the client
     const welcomeContent = buildContextAwareWelcomeMessage({
       clientName: cleanClient,
       projectName: cleanProject,
-      customInstructions: cleanInstructions,
+      participantRole: cleanRole,
       persona
     });
 
@@ -82,19 +150,32 @@ const PinRepo = {
       pin_id: id,
       sender: 'ai',
       content: welcomeContent,
-      is_internal: 0
+      is_internal: 0,
+      metadata: {
+        choices: getDefaultWelcomeChoices()
+      }
     });
 
-    return this.getById(id);
+    const created = this.getById(id);
+    ProjectTreeRepo.syncProjectTree(cleanGroup);
+    return created;
   },
 
-  update(id, { client_name, project_name, custom_instructions, persona, status, pin }) {
+  update(id, { client_name, project_name, project_group, participant_role, custom_instructions, persona, status, pin }) {
     const existing = this.getById(id);
     if (!existing) return null;
 
     const now = Date.now();
     const updatedClient = client_name !== undefined ? normalizeArabicJeem(client_name.trim()) : existing.client_name;
     const updatedProject = project_name !== undefined ? normalizeArabicJeem(project_name.trim()) : existing.project_name;
+    const updatedGroup =
+      project_group !== undefined
+        ? normalizeArabicJeem((project_group.trim() || updatedProject))
+        : (existing.project_group || updatedProject);
+    const updatedRole =
+      participant_role !== undefined
+        ? normalizeArabicJeem(participant_role.trim())
+        : (existing.participant_role || 'العميل الرئيسي (Project Owner)');
     const updatedInstructions = custom_instructions !== undefined ? normalizeArabicJeem(custom_instructions.trim()) : existing.custom_instructions;
     const updatedPersona = persona !== undefined ? persona : existing.persona;
     const updatedStatus = status !== undefined ? status : existing.status;
@@ -102,24 +183,37 @@ const PinRepo = {
 
     db.prepare(`
       UPDATE pins
-      SET pin = ?, client_name = ?, project_name = ?, custom_instructions = ?, persona = ?, status = ?, updated_at = ?
+      SET pin = ?, client_name = ?, project_name = ?, project_group = ?, participant_role = ?,
+          custom_instructions = ?, persona = ?, status = ?, updated_at = ?
       WHERE id = ?
-    `).run(updatedPin, updatedClient, updatedProject, updatedInstructions, updatedPersona, updatedStatus, now, id);
+    `).run(
+      updatedPin,
+      updatedClient,
+      updatedProject,
+      updatedGroup,
+      updatedRole,
+      updatedInstructions,
+      updatedPersona,
+      updatedStatus,
+      now,
+      id
+    );
 
-    // If the session only has the initial welcome message (no client messages yet),
-    // automatically refresh the welcome message so it reflects the updated Admin instructions!
+    // If the session only has the initial welcome message, refresh it cleanly (never exposing custom_instructions)
     const msgs = MessageRepo.getByPinId(id, false);
     if (msgs.length === 1 && msgs[0].sender === 'ai') {
       const updatedWelcome = buildContextAwareWelcomeMessage({
         clientName: updatedClient,
         projectName: updatedProject,
-        customInstructions: updatedInstructions,
+        participantRole: updatedRole,
         persona: updatedPersona
       });
       db.prepare('UPDATE messages SET content = ? WHERE id = ?').run(updatedWelcome, msgs[0].id);
     }
 
-    return this.getById(id);
+    const updated = this.getById(id);
+    ProjectTreeRepo.syncProjectTree(updatedGroup);
+    return updated;
   },
 
   updateConversationId(id, conversationId) {
@@ -135,7 +229,11 @@ const PinRepo = {
     db.prepare(`
       UPDATE pins SET prd_markdown = ?, updated_at = ? WHERE id = ?
     `).run(cleanPrd, now, id);
-    return this.getById(id);
+    const updated = this.getById(id);
+    if (updated) {
+      ProjectTreeRepo.syncProjectTree(updated.project_group || updated.project_name);
+    }
+    return updated;
   },
 
   touchActivity(id) {
@@ -144,7 +242,12 @@ const PinRepo = {
   },
 
   delete(id) {
-    return db.prepare('DELETE FROM pins WHERE id = ?').run(id);
+    const existing = this.getById(id);
+    const res = db.prepare('DELETE FROM pins WHERE id = ?').run(id);
+    if (existing) {
+      ProjectTreeRepo.syncProjectTree(existing.project_group || existing.project_name);
+    }
+    return res;
   }
 };
 
@@ -157,7 +260,6 @@ const MessageRepo = {
   },
 
   getPendingDevNotes(pinId) {
-    // Get dev notes created since the last AI response
     const lastAiMsg = db.prepare(`
       SELECT created_at FROM messages
       WHERE pin_id = ? AND sender = 'ai'
@@ -199,12 +301,225 @@ const MessageRepo = {
       now
     );
     PinRepo.touchActivity(pin_id);
+
+    const pinRecord = PinRepo.getById(pin_id);
+    if (pinRecord) {
+      ProjectTreeRepo.syncProjectTree(pinRecord.project_group || pinRecord.project_name);
+    }
+
     return db.prepare('SELECT * FROM messages WHERE id = ?').get(id);
   },
 
   clearHistory(pinId) {
     db.prepare('DELETE FROM messages WHERE pin_id = ?').run(pinId);
     db.prepare('UPDATE pins SET conversation_id = NULL WHERE id = ?').run(pinId);
+  }
+};
+
+/**
+ * Hierarchical Project Tree Builder & Sync Engine (`ProjectTreeRepo`)
+ * Organizes multi-participant sessions belonging to the same project into a structured
+ * hierarchical tree both in-memory/API and on disk inside `sandbox_env/projects_tree/<slug>/`
+ * so `agy` can read and navigate even large volumes of multi-user conversations effortlessly.
+ */
+const ProjectTreeRepo = {
+  slugify(name) {
+    return Buffer.from(String(name || 'default').trim().toLowerCase()).toString('hex').slice(0, 24) || 'project';
+  },
+
+  buildProjectTreeData(projectGroup) {
+    const participants = PinRepo.getByProjectGroup(projectGroup);
+    const nodes = participants.map((p) => {
+      const allMsgs = MessageRepo.getByPinId(p.id, true);
+      const clientMsgs = allMsgs.filter((m) => m.sender === 'client');
+      const aiMsgs = allMsgs.filter((m) => m.sender === 'ai');
+      const devNotes = allMsgs.filter((m) => m.sender === 'dev_note');
+
+      // Extract concise key statements from this participant for fast tree indexing
+      const keyClientInputs = clientMsgs.map((m) => ({
+        id: m.id,
+        content: m.content,
+        media_url: m.media_url,
+        created_at: m.created_at
+      }));
+
+      return {
+        pin_id: p.id,
+        pin: p.pin,
+        client_name: p.client_name,
+        participant_role: p.participant_role || 'العميل الرئيسي',
+        persona: p.persona,
+        status: p.status,
+        custom_instructions_internal: p.custom_instructions || '',
+        stats: {
+          total_messages: allMsgs.filter((m) => !m.is_internal).length,
+          client_responses: clientMsgs.length,
+          ai_questions: aiMsgs.length,
+          secret_dev_notes: devNotes.length
+        },
+        key_client_inputs: keyClientInputs,
+        dev_notes: devNotes.map((d) => ({ id: d.id, content: d.content, created_at: d.created_at })),
+        recent_transcript: allMsgs
+          .filter((m) => !m.is_internal)
+          .slice(-10)
+          .map((m) => ({
+            sender: m.sender,
+            content: m.content,
+            created_at: m.created_at
+          }))
+      };
+    });
+
+    return {
+      project_group: projectGroup,
+      total_participants: nodes.length,
+      updated_at: Date.now(),
+      participants_tree: nodes
+    };
+  },
+
+  syncProjectTree(projectGroup) {
+    if (!projectGroup) return null;
+    try {
+      const treeData = this.buildProjectTreeData(projectGroup);
+      const slug = this.slugify(projectGroup);
+      const dir = path.join(config.PROJECT_TREES_DIR, slug);
+      fs.mkdirSync(dir, { recursive: true });
+
+      const participantsDir = path.join(dir, 'participants');
+      fs.mkdirSync(participantsDir, { recursive: true });
+
+      // 1. Write structured JSON tree
+      const treeJsonPath = path.join(dir, 'project_tree.json');
+      fs.writeFileSync(treeJsonPath, JSON.stringify(treeData, null, 2));
+
+      // 2. Write each participant's full Markdown file for deep on-demand reading by `agy`
+      const indexLines = [
+        `# الفهرس الشجري الشامل للمشروع: ${projectGroup}`,
+        `عدد المشاركين المتصلين بالمشروع: ${treeData.total_participants}`,
+        `آخر تحديث: ${new Date(treeData.updated_at).toISOString()}`,
+        ``,
+        `## هيكل المشاركين وجلساتهم المتصلة (Tree Nodes):`
+      ];
+
+      for (const node of treeData.participants_tree) {
+        const partFile = path.join(participantsDir, `pin_${node.pin}.md`);
+        const fullMsgs = MessageRepo.getByPinId(node.pin_id, false);
+        const transcriptMd = fullMsgs
+          .map((m) => `- **[${m.sender === 'client' ? node.client_name : 'ScopeMaster AI'}]:** ${m.content}`)
+          .join('\n');
+
+        const partMd = [
+          `# جلسة المشارك: ${node.client_name} (الدور: ${node.participant_role})`,
+          `- **رمز الجلسة (PIN):** ${node.pin}`,
+          `- **المعلومات الخلفية السرية للمشارك (مخفية عن المشارك):** ${node.custom_instructions_internal || 'لا يوجد'}`,
+          `- **عدد مداخلات المشارك:** ${node.stats.client_responses}`,
+          ``,
+          `## ملخص إجابات ومدخلات هذا المشارك:`,
+          node.key_client_inputs.length > 0
+            ? node.key_client_inputs.map((k, idx) => `${idx + 1}. ${k.content}`).join('\n')
+            : '- لم يدخل إجابات بعد.',
+          ``,
+          `## السجل الكامل للمحادثة:`,
+          transcriptMd || '- لا توجد رسائل.'
+        ].join('\n');
+
+        fs.writeFileSync(partFile, partMd);
+
+        indexLines.push(`### 👤 [${node.client_name}] — الدور: (${node.participant_role}) | PIN: #${node.pin}`);
+        indexLines.push(`- **ملف السجل الكامل للقراءة (\`read_file\`):** \`${partFile}\``);
+        indexLines.push(`- **معلومات خلفية سرية عن المشارك:** ${node.custom_instructions_internal || 'لا يوجد'}`);
+        indexLines.push(`- **أبرز ما ذكره هذا المشارك (${node.stats.client_responses} مداخلات):**`);
+        if (node.key_client_inputs.length === 0) {
+          indexLines.push(`  * (لم يشارك بإجابات بعد)`);
+        } else {
+          for (const k of node.key_client_inputs.slice(-6)) {
+            indexLines.push(`  * "${k.content.replace(/\n+/g, ' ')}"`);
+          }
+        }
+        indexLines.push('');
+      }
+
+      const indexMdPath = path.join(dir, 'INDEX.md');
+      fs.writeFileSync(indexMdPath, indexLines.join('\n'));
+
+      return {
+        treeData,
+        indexMdPath,
+        treeJsonPath
+      };
+    } catch (err) {
+      console.error('[ProjectTreeRepo] Error syncing project tree:', err.message);
+      return null;
+    }
+  }
+};
+
+/**
+ * Standalone Developer AI Consultant Threads (`DevAiRepo`)
+ * Enables the developer to chat directly with `agy` in a dedicated private thread
+ * at any moment (optionally linked to a project tree or completely general).
+ */
+const DevAiRepo = {
+  getAllThreads() {
+    return db.prepare(`
+      SELECT t.*,
+        (SELECT COUNT(*) FROM dev_ai_messages m WHERE m.thread_id = t.id) AS message_count
+      FROM dev_ai_threads t
+      ORDER BY t.updated_at DESC
+    `).all();
+  },
+
+  getThreadById(id) {
+    return db.prepare('SELECT * FROM dev_ai_threads WHERE id = ?').get(id);
+  },
+
+  createThread({ title, project_group = null }) {
+    const id = `devthread-${uuidv4().slice(0, 8)}`;
+    const now = Date.now();
+    const cleanTitle = normalizeArabicJeem((title || 'استشارة تقنية جديدة').trim());
+    const cleanGroup = project_group ? normalizeArabicJeem(project_group.trim()) : null;
+
+    db.prepare(`
+      INSERT INTO dev_ai_threads (id, title, project_group, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(id, cleanTitle, cleanGroup, now, now);
+
+    // Seed welcome message for developer
+    this.addMessage({
+      thread_id: id,
+      sender: 'ai',
+      content: cleanGroup
+        ? `مرحباً بك في **مساعد المطورين الخاص (Developer AI Workbench)**! 🧠\nهذه المحادثة مرتبطة بشجرة بيانات المشروع المشترك **(${cleanGroup})**.\n\nيمكنك سؤالي عن أي تفاصيل، تحليل التناقضات بين إجابات المستخدمين المتعددين، اقتراح هيكلة قاعدة البيانات (Database Schema)، أو صياغة أسئلة مخصصة لأحد المشاركين.`
+        : `مرحباً بك في **مساعد المطورين المستقل (Standalone Developer AI)**! 🧠\nهذه مساحة حرة ومنفصلة تماماً عن محادثات العملاء. يمكنك مناقشة أي فكرة برمجية، تحليل معماري، أو استفسار تقني معي في أي لحظة.`
+    });
+
+    return this.getThreadById(id);
+  },
+
+  updateConversationId(id, conversationId) {
+    const now = Date.now();
+    db.prepare('UPDATE dev_ai_threads SET conversation_id = ?, updated_at = ? WHERE id = ?').run(conversationId, now, id);
+  },
+
+  deleteThread(id) {
+    return db.prepare('DELETE FROM dev_ai_threads WHERE id = ?').run(id);
+  },
+
+  getMessages(threadId) {
+    return db.prepare('SELECT * FROM dev_ai_messages WHERE thread_id = ? ORDER BY created_at ASC').all(threadId);
+  },
+
+  addMessage({ thread_id, sender, content, metadata = {} }) {
+    const id = `devmsg-${uuidv4()}`;
+    const now = Date.now();
+    const cleanContent = normalizeArabicJeem(content);
+    db.prepare(`
+      INSERT INTO dev_ai_messages (id, thread_id, sender, content, metadata, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, thread_id, sender, cleanContent, JSON.stringify(metadata || {}), now);
+    db.prepare('UPDATE dev_ai_threads SET updated_at = ? WHERE id = ?').run(now, thread_id);
+    return db.prepare('SELECT * FROM dev_ai_messages WHERE id = ?').get(id);
   }
 };
 
@@ -215,7 +530,6 @@ const RateLimitRepo = {
       return { ip, failed_attempts: 0, lockout_until: 0, last_attempt_at: 0, is_locked: false, remaining_ms: 0 };
     }
     const now = Date.now();
-    // If lockout expired, reset failed_attempts automatically
     if (row.lockout_until > 0 && now >= row.lockout_until) {
       this.resetIp(ip);
       return { ip, failed_attempts: 0, lockout_until: 0, last_attempt_at: row.last_attempt_at, is_locked: false, remaining_ms: 0 };
@@ -316,8 +630,11 @@ const SecurityEventRepo = {
 module.exports = {
   PinRepo,
   MessageRepo,
+  ProjectTreeRepo,
+  DevAiRepo,
   RateLimitRepo,
   SecurityEventRepo,
   normalizeArabicJeem,
-  buildContextAwareWelcomeMessage
+  buildContextAwareWelcomeMessage,
+  getDefaultWelcomeChoices
 };

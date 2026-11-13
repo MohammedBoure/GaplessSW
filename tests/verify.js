@@ -175,7 +175,7 @@ async function runTests() {
     assert.strictEqual(noteRes.status, 200, 'Secret note injection must succeed');
     assert.strictEqual(noteRes.body.noteMessage.is_internal, 1, 'Secret note must have is_internal=1');
 
-    // Verify client session endpoint NEVER exposes internal dev_note messages
+    // Verify client session endpoint NEVER exposes internal dev_note messages OR custom_instructions
     const clientSessionCheck = await requestJson(
       port,
       'GET',
@@ -185,10 +185,48 @@ async function runTests() {
     );
     const leakedNotes = clientSessionCheck.body.messages.filter((m) => m.sender === 'dev_note' || m.is_internal === 1);
     assert.strictEqual(leakedNotes.length, 0, 'Client session must NEVER see secret [DEV_NOTE] items');
+    assert(!clientSessionCheck.body.session.custom_instructions, 'Client session object must not expose raw custom_instructions');
+    const welcomeMsgText = clientSessionCheck.body.messages[0]?.content || '';
+    assert(!welcomeMsgText.includes('Client is non-technical'), 'Welcome message must NEVER leak raw custom_instructions to the user');
 
-    // Clean up test PIN
+    // 7. Verify Multi-User Shared Project Tree & Standalone Developer AI Threads
+    const secondMemberRes = await requestJson(
+      port,
+      'POST',
+      '/api/admin/pins',
+      {
+        pin: '9082',
+        client_name: 'كمال - أمين المخزن',
+        project_name: 'منصة تجارة إلكترونية',
+        project_group: 'منصة تجارة إلكترونية',
+        participant_role: 'أمين المخزن والمستودع',
+        persona: 'adaptive_smart',
+        custom_instructions: 'Focus on warehouse barcode scanning.'
+      },
+      adminHeaders
+    );
+    assert.strictEqual(secondMemberRes.status, 201, 'Second linked project member creation must return 201');
+    const secondPinId = secondMemberRes.body.pin.id;
+
+    const treeRes = await requestJson(
+      port,
+      'GET',
+      `/api/dev/projects-tree?project_group=${encodeURIComponent('منصة تجارة إلكترونية')}`,
+      null,
+      adminHeaders
+    );
+    assert.strictEqual(treeRes.status, 200, 'Project tree endpoint must return 200');
+    assert.strictEqual(treeRes.body.tree.total_participants, 2, 'Shared project tree must contain both linked participants');
+
+    const devThreadsRes = await requestJson(port, 'GET', '/api/dev/ai-threads', null, adminHeaders);
+    assert.strictEqual(devThreadsRes.status, 200, 'Standalone Dev AI threads endpoint must return 200');
+    assert(Array.isArray(devThreadsRes.body.threads) && devThreadsRes.body.threads.length > 0, 'Default Dev AI thread must exist');
+
+    // Clean up test PINs
     await requestJson(port, 'DELETE', `/api/admin/pins/${testPinId}`, null, adminHeaders);
-    console.log('✅ [6/6] Developer Co-Pilot (Ghost Mode & Secret [DEV_NOTE] Isolation) verified.\n');
+    await requestJson(port, 'DELETE', `/api/admin/pins/${secondPinId}`, null, adminHeaders);
+    console.log('✅ [6/7] Developer Co-Pilot (Ghost Mode, Choice Chips & Secret [DEV_NOTE] Isolation) verified.');
+    console.log('✅ [7/7] Multi-User Hierarchical Project Tree & Standalone Dev AI Assistant verified.\n');
     console.log('🎉 ALL GAPLESS VERIFICATION TESTS PASSED!');
   } finally {
     server.close();

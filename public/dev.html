@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gapless Co-Pilot (/dev) — غرفة تحكم المطورين المباشرة</title>
+  <title>Gapless Co-Pilot (/dev) — غرفة تحكم المطورين والشجرة الموحدة</title>
   <link rel="stylesheet" href="/css/styles.css" />
+  <script src="/js/theme.js"></script>
 </head>
 <body>
   <!-- ==================================================================
@@ -12,10 +13,14 @@
        ================================================================== -->
   <div id="devAuthOverlay" class="auth-overlay">
     <div class="auth-card">
-      <div style="text-align:center; margin-bottom:20px;">
-        <div class="brand-logo-badge" style="width:52px; height:52px; font-size:22px;">G</div>
-        <h2 style="font-size:1.3rem; font-weight:800;">وضع المطورين Co-Pilot (/dev)</h2>
-        <p style="font-size:0.84rem; color:var(--text-secondary);">المراقبة الحية، وضع الشبح (Ghost Mode)، الملاحظات السرية، وتوليد PRD</p>
+      <div style="text-align:center; margin-bottom:22px;">
+        <div class="brand-logo-badge" style="width:48px; height:48px;">
+          <svg class="icon icon-lg" viewBox="0 0 24 24">
+            <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+          </svg>
+        </div>
+        <h2 style="font-size:1.25rem; font-weight:800;">غرفة المطورين Co-Pilot (/dev)</h2>
+        <p style="font-size:0.82rem; color:var(--text-secondary); margin-top:4px;">المراقبة الحية، شجرة المشاريع المشتركة، مساعد المطورين المستقل، وتوليد PRD</p>
       </div>
 
       <form id="devLoginForm">
@@ -27,8 +32,8 @@
           <label class="form-label" for="devPassword">كلمة المرور</label>
           <input type="password" id="devPassword" class="form-input" placeholder="••••••••" required />
         </div>
-        <div id="devLoginError" class="hidden" style="color:var(--accent-rose); font-size:0.84rem; margin-bottom:12px;"></div>
-        <button type="submit" class="btn btn-primary" style="width:100%;">دخول غرفة Co-Pilot</button>
+        <div id="devLoginError" class="hidden" style="color:var(--accent-rose); font-size:0.82rem; margin-bottom:12px;"></div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">دخول غرفة المطورين</button>
       </form>
     </div>
   </div>
@@ -39,22 +44,41 @@
   <div class="dashboard-layout">
     <nav class="dash-navbar">
       <div class="dash-nav-brand">
-        <div class="brand-logo-badge" style="width:36px; height:36px; font-size:18px; margin:0; border-radius:10px;">G</div>
-        <span>Gapless <span style="color:var(--accent-emerald);">Developer Co-Pilot</span> (/dev)</span>
+        <div class="brand-logo-badge" style="width:34px; height:34px; margin:0; border-radius:9px;">
+          <svg class="icon" viewBox="0 0 24 24">
+            <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+          </svg>
+        </div>
+        <span>Gapless <span style="color:var(--brand-primary);">Developer Co-Pilot</span> (/dev)</span>
       </div>
       <div class="dash-nav-links">
-        <a href="/" target="_blank" class="btn btn-secondary btn-sm">📱 بوابة العميل (/)</a>
-        <a href="/admin" class="btn btn-secondary btn-sm">⚙️ لوحة الإدارة (/admin)</a>
-        <button id="devLogoutBtn" type="button" class="btn btn-danger btn-sm">خروج</button>
+        <button type="button" class="theme-toggle-btn" data-theme-toggle aria-label="تبديل المظهر"></button>
+        <a href="/" target="_blank" class="btn btn-secondary btn-sm">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+          <span>بوابة العميل</span>
+        </a>
+        <a href="/admin" class="btn btn-secondary btn-sm">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>لوحة الإدارة (/admin)</span>
+        </a>
+        <button id="devLogoutBtn" type="button" class="btn btn-danger btn-sm">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <span>خروج</span>
+        </button>
       </div>
     </nav>
 
     <div class="copilot-grid">
-      <!-- 1. Right Pane (in RTL): Active Client Sessions List -->
+      <!-- 1. Right Pane (in RTL): Active Projects & Connected Participant Sessions -->
       <aside class="copilot-sidebar">
-        <div style="padding:14px 16px; border-bottom:1px solid var(--border-subtle); display:flex; justify-content:space-between; align-items:center;">
-          <strong style="font-size:0.95rem;">📡 جلسات العملاء</strong>
-          <button id="refreshSessionsBtn" type="button" class="btn btn-secondary btn-sm">↻</button>
+        <div style="padding:12px 14px; border-bottom:1px solid var(--border-subtle); display:flex; justify-content:space-between; align-items:center;">
+          <div style="display:flex; align-items:center; gap:6px; font-weight:700; font-size:0.88rem;">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>المشاريع وجلسات المستخدمين</span>
+          </div>
+          <button id="refreshSessionsBtn" type="button" class="btn btn-secondary btn-sm" title="تحديث">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          </button>
         </div>
         <div id="devSessionsList" style="flex:1; overflow-y:auto;"></div>
       </aside>
@@ -64,44 +88,58 @@
         <!-- Active Session Header -->
         <header style="padding:12px 18px; background:var(--bg-secondary); border-bottom:1px solid var(--border-subtle); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
           <div>
-            <div id="activeSessionHeaderTitle" style="font-weight:800; font-size:1.02rem;">اختر جلسة عميل من القائمة</div>
-            <div id="activeSessionHeaderMeta" style="font-size:0.8rem; color:var(--text-secondary);">لم يتم اختيار جلسة بعد</div>
+            <div id="activeSessionHeaderTitle" style="font-weight:800; font-size:0.98rem;">اختر جلسة مستخدم من القائمة</div>
+            <div id="activeSessionHeaderMeta" style="font-size:0.76rem; color:var(--text-secondary);">لم يتم اختيار جلسة بعد</div>
           </div>
           <div style="display:flex; gap:8px;">
-            <button id="resetSessionChatBtn" type="button" class="btn btn-secondary btn-sm" disabled title="مسح المحادثة الحالية وإعادة توليد رسالة الترحيب الذكية بناءً على التوجيهات">
-              🔄 إعادة ضبط المحادثة
+            <button id="resetSessionChatBtn" type="button" class="btn btn-secondary btn-sm" disabled title="مسح المحادثة الحالية وإعادة الضبط">
+              <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+              <span>إعادة ضبط المحادثة</span>
             </button>
             <button id="generatePrdBtn" type="button" class="btn btn-emerald btn-sm" disabled>
-              📄 توليد وثيقة PRD بضغطة واحدة ([GENERATE_PRD])
+              <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <span>توليد وثيقة PRD الشاملة ([GENERATE_PRD])</span>
             </button>
           </div>
         </header>
 
-        <!-- Live Stream Container (Shows Client, AI, Ghost Badges, and Secret [DEV_NOTE: ...] items) -->
+        <!-- Live Stream Container -->
         <div id="devChatStream" class="chat-messages-area" style="flex:1;"></div>
 
         <!-- Live Typing Banner -->
-        <div id="devTypingBanner" class="hidden" style="padding:6px 18px; font-size:0.8rem; color:var(--accent-secondary); background:rgba(6,182,212,0.08);">
-          ⚡ جاري الكتابة أو المعالجة في الوقت الفعلي...
+        <div id="devTypingBanner" class="hidden" style="padding:6px 18px; font-size:0.78rem; color:var(--brand-text); background:var(--brand-soft);">
+          جاري الكتابة أو المعالجة في الوقت الفعلي...
         </div>
 
         <!-- Co-Pilot Dual Action Console: Ghost Mode vs Secret Note ([DEV_NOTE: ...]) -->
-        <div style="padding:14px 18px; background:var(--bg-secondary); border-top:1px solid var(--border-subtle);">
-          <!-- Mode Selector Tabs -->
-          <div style="display:flex; gap:10px; margin-bottom:10px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
+        <div style="padding:12px 16px; background:var(--bg-secondary); border-top:1px solid var(--border-subtle);">
+          <div style="display:flex; gap:10px; margin-bottom:8px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
             <div style="display:flex; gap:8px;">
               <button type="button" id="modeTabGhost" class="btn btn-primary btn-sm">
-                👻 وضع الشبح (Ghost Mode — يظهر للعميل كأنه الذكاء الاصطناعي)
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span>وضع الشبح (Ghost Mode — يظهر للمستخدم كأنه الـ AI)</span>
               </button>
-              <button type="button" id="modeTabNote" class="btn btn-amber btn-sm">
-                🕵️‍♂️ ملاحظة سرية للـ AI ([DEV_NOTE: ...] — مخفية عن العميل)
+              <button type="button" id="modeTabNote" class="btn btn-secondary btn-sm">
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <span>ملاحظة سرية للـ AI ([DEV_NOTE] — مخفية عن المستخدم)</span>
               </button>
             </div>
 
-            <label id="triggerAiNowLabel" class="hidden" style="font-size:0.8rem; color:var(--text-secondary); display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <label id="triggerAiNowLabel" class="hidden" style="font-size:0.78rem; color:var(--text-secondary); display:flex; align-items:center; gap:6px; cursor:pointer;">
               <input type="checkbox" id="triggerAiNowCheckbox" checked />
-              <span>حث `agy` على طرح سؤال فوري للعميل بناءً على الملاحظة</span>
+              <span>حث `agy` على طرح سؤال فوري للمستخدم بناءً على الملاحظة</span>
             </label>
+          </div>
+
+          <!-- Optional Quick Choices Builder when in Ghost Mode -->
+          <div id="ghostChoicesRow" style="margin-bottom:8px;">
+            <input
+              type="text"
+              id="ghostChoicesInput"
+              class="form-input"
+              style="font-size:0.78rem; padding:6px 10px;"
+              placeholder="اختياري: أضف خيارات سريعة للمستخدم مفصولة بعلامة | (مثال: طابق واحد | طابقين | مستودع خارجي)"
+            />
           </div>
 
           <form id="copilotActionForm" style="display:flex; gap:10px;">
@@ -109,35 +147,95 @@
               id="copilotInput"
               class="form-textarea"
               rows="2"
-              placeholder="اكتب رسالتك المباشرة للعميل باسم الذكاء الاصطناعي (Ghost Mode)..."
+              placeholder="اكتب رسالتك المباشرة للمستخدم باسم الذكاء الاصطناعي (Ghost Mode)..."
               disabled
             ></textarea>
             <button
               type="submit"
               id="copilotSubmitBtn"
               class="btn btn-primary"
-              style="min-width:150px;"
+              style="min-width:140px;"
               disabled
             >
-              👻 إرسال كـ AI
+              <span>إرسال كـ AI</span>
             </button>
           </form>
         </div>
       </main>
 
-      <!-- 3. Left Pane (in RTL): One-Click PRD Viewer & Export -->
+      <!-- 3. Left Pane (in RTL): 3-Tab Multi-Tool Workbench
+           Tab 1: Standalone Developer AI Chat
+           Tab 2: Hierarchical Project Knowledge Tree
+           Tab 3: PRD Document Viewer & Export
+      -->
       <aside class="copilot-right">
-        <div style="padding:14px 16px; border-bottom:1px solid var(--border-subtle); display:flex; justify-content:space-between; align-items:center;">
-          <strong style="font-size:0.95rem;">📋 وثيقة المتطلبات (PRD)</strong>
-          <div style="display:flex; gap:6px;">
-            <button id="copyPrdBtn" type="button" class="btn btn-secondary btn-sm" disabled>📋 نسخ</button>
-            <button id="downloadPrdBtn" type="button" class="btn btn-secondary btn-sm" disabled>⬇ تحميل .md</button>
-          </div>
+        <div class="panel-tabs">
+          <button type="button" class="panel-tab-btn active" data-panel-tab="dev-ai">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 12L2.1 10.5"/></svg>
+            <span>محادثة AI للمطور</span>
+          </button>
+          <button type="button" class="panel-tab-btn" data-panel-tab="project-tree">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+            <span>الشجرة الشاملة للمشروع</span>
+          </button>
+          <button type="button" class="panel-tab-btn" data-panel-tab="prd-doc">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <span>وثيقة PRD</span>
+          </button>
         </div>
 
-        <div id="prdViewerContainer" class="prd-viewer">
-          <div style="color:var(--text-muted); text-align:center; padding-top:60px;">
-            اضغط على زر <strong>"توليد وثيقة PRD بضغطة واحدة ([GENERATE_PRD])"</strong> في الأعلى لتوليد وثيقة متطلبات المنتج الكاملة من محادثة العميل وملاحظات المطورين.
+        <!-- TAB 1: Standalone Developer AI Assistant -->
+        <div id="tabPaneDevAi" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+          <div style="padding:10px 14px; border-bottom:1px solid var(--border-subtle); background:var(--bg-secondary); display:flex; align-items:center; justify-content:space-between; gap:8px;">
+            <select id="devAiThreadSelect" class="form-select" style="padding:6px 10px; font-size:0.8rem; flex:1;"></select>
+            <button type="button" id="newDevAiThreadBtn" class="btn btn-secondary btn-sm" title="محادثة استشارية جديدة مع الذكاء الاصطناعي">
+              + محادثة جديدة
+            </button>
+          </div>
+
+          <div style="padding:6px 14px; background:var(--bg-elevated); border-bottom:1px solid var(--border-subtle); font-size:0.74rem; color:var(--text-secondary);">
+            تحدث مباشرة مع الذكاء الاصطناعي كمطور بمعزل عن العميل (اسأله عن التفاصيل، هيكلة النظام، أو تحليل إجابات المشاركين).
+          </div>
+
+          <div id="devAiMessagesContainer" class="chat-messages-area" style="flex:1; padding:14px;"></div>
+
+          <form id="devAiComposerForm" style="padding:10px 12px; border-top:1px solid var(--border-subtle); background:var(--bg-secondary); display:flex; gap:8px;">
+            <textarea
+              id="devAiInput"
+              class="form-textarea"
+              rows="2"
+              style="font-size:0.84rem;"
+              placeholder="اسأل الذكاء الاصطناعي كمطور (مثال: ما هي النواقص في كلام موسى؟ أو اقترح جداول قاعدة البيانات)..."
+            ></textarea>
+            <button type="submit" id="devAiSendBtn" class="btn btn-primary btn-sm" style="padding:0 14px;">
+              إرسال
+            </button>
+          </form>
+        </div>
+
+        <!-- TAB 2: Hierarchical Project Knowledge Tree -->
+        <div id="tabPaneProjectTree" class="hidden" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+          <div style="padding:10px 14px; border-bottom:1px solid var(--border-subtle); background:var(--bg-secondary); display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:0.8rem; font-weight:700;">شجرة بيانات المشروع المشترك (Hierarchical Tree)</span>
+            <button type="button" id="refreshTreeBtn" class="btn btn-secondary btn-sm">تحديث الشجرة</button>
+          </div>
+          <div id="projectTreeContainer" class="tree-root"></div>
+        </div>
+
+        <!-- TAB 3: PRD Viewer & Export -->
+        <div id="tabPanePrdDoc" class="hidden" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+          <div style="padding:10px 14px; border-bottom:1px solid var(--border-subtle); background:var(--bg-secondary); display:flex; justify-content:space-between; align-items:center;">
+            <strong style="font-size:0.84rem;">وثيقة المتطلبات (PRD)</strong>
+            <div style="display:flex; gap:6px;">
+              <button id="copyPrdBtn" type="button" class="btn btn-secondary btn-sm" disabled>نسخ</button>
+              <button id="downloadPrdBtn" type="button" class="btn btn-secondary btn-sm" disabled>تحميل .md</button>
+            </div>
+          </div>
+
+          <div id="prdViewerContainer" class="prd-viewer">
+            <div style="color:var(--text-muted); text-align:center; padding-top:60px;">
+              اضغط على زر <strong>"توليد وثيقة PRD الشاملة ([GENERATE_PRD])"</strong> في الأعلى لتوليد وثيقة متطلبات المنتج الموحدة من جميع محادثات المشروع.
+            </div>
           </div>
         </div>
       </aside>

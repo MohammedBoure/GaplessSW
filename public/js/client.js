@@ -4,6 +4,8 @@
  * Features:
  * - 4-digit PIN entry with touch keypad & keyboard support
  * - Real-time 5-minute countdown timer when 5 failed attempts occur
+ * - Interactive Choice Chips: AI responses include clickable quick-choice buttons
+ *   for one-tap replies while still supporting full free-text input
  * - Arabic character normalization ('٩' -> 'ج') in conversational inputs
  * - Real-time WebSocket message sync, Ghost Mode reception, and typing indicators
  * - Sketch / Screenshot / Wireframe upload support
@@ -44,22 +46,24 @@
 
   const socket = io();
 
-  // Normalize Arabic '٩' (U+0669) -> 'ج' in conversational text
   function normalizeTextJeem(str) {
     if (typeof str !== 'string') return '';
     return str.replace(/\u0669/g, 'ج');
   }
 
-  // Format simple markdown (bold, code, bullet lists, line breaks) safely
-  function formatMarkdownSafe(text) {
-    const escaped = normalizeTextJeem(String(text || ''))
+  function escapeHtml(str) {
+    return normalizeTextJeem(String(str || ''))
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
 
+  function formatMarkdownSafe(text) {
+    const escaped = escapeHtml(text);
     return escaped
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.3);padding:2px 6px;border-radius:4px;font-family:var(--font-mono);font-size:0.84em;">$1</code>')
+      .replace(/`([^`]+)`/g, '<code style="background:var(--bg-elevated);padding:2px 6px;border-radius:4px;font-family:var(--font-mono);font-size:0.84em;">$1</code>')
       .replace(/\n/g, '<br/>');
   }
 
@@ -136,7 +140,7 @@
 
   async function submitPin(pinCode) {
     setKeypadDisabled(true);
-    pinFeedbackText.innerHTML = '<span style="color:var(--accent-secondary);">جاري التحقق من الرمز...</span>';
+    pinFeedbackText.innerHTML = '<span style="color:var(--brand-text);">جاري التحقق من الرمز...</span>';
 
     try {
       const res = await fetch('/api/client/verify-pin', {
@@ -162,11 +166,10 @@
         return;
       }
 
-      // Success! Save session and open Chat View
       clientToken = data.token;
       localStorage.setItem('gapless_client_token', clientToken);
       openChatSession(data.session, data.messages || []);
-    } catch (err) {
+    } catch {
       setKeypadDisabled(false);
       pinFeedbackText.innerHTML = '<span style="color:var(--accent-rose);">تعذر الاتصال بالخادم. حاول مرة أخرى.</span>';
     }
@@ -198,7 +201,6 @@
     renderPinSlots(false);
   });
 
-  // Support physical keyboard digits on PIN screen
   window.addEventListener('keydown', (e) => {
     if (!pinGatewayScreen.classList.contains('hidden') && !isLockedOut) {
       if (/^[0-9]$/.test(e.key)) {
@@ -214,7 +216,7 @@
   });
 
   // ============================================================================
-  // 2. Discovery Chat Screen & Real-Time Messages
+  // 2. Discovery Chat Screen, Choice Chips, & Real-Time Messages
   // ============================================================================
   function scrollToBottom() {
     requestAnimationFrame(() => {
@@ -222,11 +224,20 @@
     });
   }
 
+  function parseMsgMetadata(msg) {
+    try {
+      return typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : (msg.metadata || {});
+    } catch {
+      return {};
+    }
+  }
+
   function appendMessageBubble(msg) {
     if (!msg || msg.is_internal || msg.sender === 'dev_note') return;
     if (renderedMessageIds.has(msg.id)) return;
     renderedMessageIds.add(msg.id);
 
+    const meta = parseMsgMetadata(msg);
     const row = document.createElement('div');
     row.className = `msg-row ${msg.sender === 'client' ? 'client' : 'ai'}`;
 
@@ -239,11 +250,28 @@
       `;
     }
 
-    const senderLabel = msg.sender === 'client' ? 'أنت' : 'مستشار Gapless الذكي';
+    // Render interactive choice chips if this is an AI message and choices exist
+    let choicesHtml = '';
+    if (msg.sender === 'ai' && Array.isArray(meta.choices) && meta.choices.length > 0) {
+      const buttons = meta.choices
+        .map(
+          (choiceText) => `
+          <button type="button" class="choice-chip-btn" data-choice-value="${escapeHtml(choiceText)}">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            <span>${escapeHtml(choiceText)}</span>
+          </button>
+        `
+        )
+        .join('');
+      choicesHtml = `<div class="choices-container">${buttons}</div>`;
+    }
+
+    const senderLabel = msg.sender === 'client' ? 'أنت' : 'مستشار التحليل الذكي';
     row.innerHTML = `
       <div class="msg-bubble">
         ${mediaHtml}
         <div>${formatMarkdownSafe(msg.content)}</div>
+        ${choicesHtml}
       </div>
       <div class="msg-meta">
         <span>${senderLabel}</span>
@@ -256,13 +284,34 @@
     scrollToBottom();
   }
 
+  // Handle clicking on an interactive choice chip
+  chatMessagesContainer.addEventListener('click', (e) => {
+    const chipBtn = e.target.closest('.choice-chip-btn[data-choice-value]');
+    if (!chipBtn || isSubmittingMessage) return;
+
+    const chosenValue = chipBtn.dataset.choiceValue;
+    if (!chosenValue) return;
+
+    // If the choice ends with '...' (e.g. "سأشرح لك بالتفصيل..."), put it in the input box and focus so the user can elaborate
+    if (chosenValue.endsWith('...')) {
+      messageInput.value = chosenValue.replace(/\.+$/, '') + ': ';
+      messageInput.focus();
+      return;
+    }
+
+    // Otherwise submit immediately as the client's answer!
+    messageInput.value = chosenValue;
+    chatComposerForm.requestSubmit();
+  });
+
   function openChatSession(session, messages) {
     activeSession = session;
     pinGatewayScreen.classList.add('hidden');
     chatDiscoveryScreen.classList.remove('hidden');
 
-    chatProjectTitle.textContent = normalizeTextJeem(session.projectName);
-    chatClientSubtitle.textContent = `العميل: ${normalizeTextJeem(session.clientName)} • رمز #${session.pin}`;
+    chatProjectTitle.textContent = normalizeTextJeem(session.projectGroup || session.projectName);
+    const rolePart = session.participantRole ? ` (${normalizeTextJeem(session.participantRole)})` : '';
+    chatClientSubtitle.textContent = `${normalizeTextJeem(session.clientName)}${rolePart} • #${session.pin}`;
 
     chatMessagesContainer.innerHTML = '';
     renderedMessageIds.clear();
@@ -307,7 +356,6 @@
     pinGatewayScreen.classList.remove('hidden');
   });
 
-  // Live conversion of '٩' -> 'ج' while typing in chat input
   let typingTimeout = null;
   messageInput.addEventListener('input', () => {
     const start = messageInput.selectionStart;
@@ -318,11 +366,9 @@
       messageInput.setSelectionRange(start, end);
     }
 
-    // Auto-resize textarea
     messageInput.style.height = 'auto';
     messageInput.style.height = `${Math.min(messageInput.scrollHeight, 110)}px`;
 
-    // Emit live typing state to Developer Co-Pilot
     socket.emit('client:typing', { isTyping: messageInput.value.trim().length > 0 });
     clearTimeout(typingTimeout);
     typingTimeout = setTimeout(() => {
@@ -330,7 +376,6 @@
     }, 2000);
   });
 
-  // Submit on Enter (without Shift on desktop)
   messageInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && window.innerWidth > 640) {
       e.preventDefault();
@@ -338,7 +383,6 @@
     }
   });
 
-  // Media attachment handling
   triggerUploadBtn.addEventListener('click', () => {
     mediaUploadInput.click();
   });
@@ -346,7 +390,7 @@
   mediaUploadInput.addEventListener('change', () => {
     const file = mediaUploadInput.files[0];
     if (file) {
-      mediaFileNameText.textContent = `📎 ${file.name}`;
+      mediaFileNameText.textContent = file.name;
       mediaPreviewChip.classList.remove('hidden');
     } else {
       mediaPreviewChip.classList.add('hidden');
@@ -358,7 +402,6 @@
     mediaPreviewChip.classList.add('hidden');
   });
 
-  // Send message & optional sketch/screenshot
   chatComposerForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (isSubmittingMessage || !activeSession) return;
@@ -377,7 +420,6 @@
       formData.append('media', file);
     }
 
-    // Clear composer immediately for snappy mobile UX
     messageInput.value = '';
     messageInput.style.height = 'auto';
     mediaUploadInput.value = '';
@@ -403,7 +445,7 @@
       } else {
         alert(data.error || 'تعذر إرسال الرسالة.');
       }
-    } catch (err) {
+    } catch {
       typingIndicatorRow.classList.add('hidden');
       alert('حدث خطأ في الاتصال بالخادم.');
     } finally {
@@ -414,7 +456,6 @@
     }
   });
 
-  // Real-time Socket Listeners
   socket.on('chat:message', (msg) => {
     appendMessageBubble(msg);
   });
@@ -435,6 +476,5 @@
     exitSessionBtn.click();
   });
 
-  // Initialize
   tryRestoreExistingSession();
 })();

@@ -342,11 +342,38 @@
 
       let mediaHtml = '';
       if (msg.media_url) {
-        mediaHtml = `
-          <div class="msg-media-preview">
-            <img src="${msg.media_url}" alt="مرفق العميل" onclick="window.open('${msg.media_url}', '_blank')" />
-          </div>
-        `;
+        const isAudio =
+          meta.mediaType === 'audio' ||
+          /\.(webm|ogg|mp3|wav|m4a|aac)(\?|$)/i.test(msg.media_url);
+        const isPdf = meta.mediaType === 'pdf' || /\.pdf(\?|$)/i.test(msg.media_url);
+
+        if (isAudio) {
+          const durationLabel = meta.audioDuration ? ` (${meta.audioDuration})` : '';
+          mediaHtml = `
+            <div class="audio-bubble-player">
+              <div class="audio-bubble-header">
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+                <span>رسالة صوتية${escapeHtml(durationLabel)}</span>
+              </div>
+              <audio controls preload="metadata" src="${msg.media_url}"></audio>
+            </div>
+          `;
+        } else if (isPdf) {
+          mediaHtml = `
+            <div class="msg-media-preview" style="padding:10px 12px;">
+              <a href="${msg.media_url}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-text); font-weight:600; text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <span>عرض ملف PDF المرفق</span>
+              </a>
+            </div>
+          `;
+        } else {
+          mediaHtml = `
+            <div class="msg-media-preview">
+              <img src="${msg.media_url}" alt="مرفق العميل" onclick="window.open('${msg.media_url}', '_blank')" />
+            </div>
+          `;
+        }
       }
 
       const who = msg.sender === 'client' ? 'المستخدم' : 'المستشار الذكي (ScopeMaster)';

@@ -127,13 +127,36 @@
       </div>
 
       <!-- Bottom Sticky Input Composer -->
-      <div class="chat-composer-wrapper">
+      <div class="chat-composer-wrapper" id="chatComposerWrapper">
         <!-- Selected Image / Sketch Preview Chip -->
         <div id="mediaPreviewChip" class="attachment-chip hidden">
-          <span id="mediaFileNameText" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:240px;"></span>
+          <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+            <img id="mediaPreviewThumb" class="attachment-thumb hidden" alt="معاينة الصورة" />
+            <span id="mediaFileNameText" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px;"></span>
+          </div>
           <button id="removeMediaBtn" type="button" style="background:none; border:none; color:var(--accent-rose); cursor:pointer; font-weight:700; display:inline-flex; align-items:center; gap:4px;">
             <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             <span>إزالة</span>
+          </button>
+        </div>
+
+        <!-- WhatsApp-style Active Voice Recording Bar -->
+        <div id="voiceRecordingBar" class="voice-recording-bar hidden">
+          <button type="button" id="cancelRecordingBtn" class="icon-btn rec-cancel-btn" title="إلغاء التسجيل" aria-label="إلغاء التسجيل">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          </button>
+
+          <div class="rec-status-pill">
+            <span class="rec-pulse-dot"></span>
+            <span id="recordingTimerText" class="rec-timer">0:00</span>
+            <span class="rec-label">جاري التسجيل الصوتي...</span>
+            <div class="rec-waveform" aria-hidden="true">
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+          </div>
+
+          <button type="button" id="sendRecordingBtn" class="icon-btn send-btn" title="إرسال الرسالة الصوتية" aria-label="إرسال الرسالة الصوتية">
+            <svg class="icon" viewBox="0 0 24 24" style="transform: rotate(180deg);"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           </button>
         </div>
 
@@ -142,14 +165,14 @@
           <input
             type="file"
             id="mediaUploadInput"
-            accept="image/*,application/pdf"
+            accept="image/*,application/pdf,audio/*"
             class="hidden"
           />
           <button
             type="button"
             id="triggerUploadBtn"
             class="icon-btn"
-            title="إرفاق رسم تخطيطي (Sketch) أو لقطة شاشة (Wireframe)"
+            title="إرفاق صورة أو لقطة شاشة أو ملف PDF"
             aria-label="إرفاق ملف أو صورة"
           >
             <svg class="icon" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
@@ -159,13 +182,25 @@
             id="messageInput"
             class="composer-textarea"
             rows="1"
-            placeholder="اختر من الخيارات أعلاه أو اكتب إجابتك هنا بحرية..."
+            placeholder="اختر من الخيارات أعلاه أو اكتب إجابتك هنا..."
           ></textarea>
 
+          <!-- WhatsApp-style Mic Button (shown when input & attachment are empty) -->
+          <button
+            type="button"
+            id="recordVoiceBtn"
+            class="icon-btn mic-btn"
+            title="تسجيل رسالة صوتية"
+            aria-label="تسجيل رسالة صوتية"
+          >
+            <svg class="icon" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          </button>
+
+          <!-- Send Button (shown when text or media is present) -->
           <button
             type="submit"
             id="sendMessageBtn"
-            class="icon-btn send-btn"
+            class="icon-btn send-btn hidden"
             title="إرسال"
             aria-label="إرسال"
           >
@@ -174,6 +209,14 @@
         </form>
       </div>
     </section>
+  </div>
+
+  <!-- Image Lightbox Modal -->
+  <div id="imageLightboxModal" class="lightbox-modal hidden" role="dialog" aria-modal="true">
+    <button type="button" id="closeLightboxBtn" class="lightbox-close-btn" aria-label="إغلاق">
+      <svg class="icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <img id="lightboxImage" src="" alt="معاينة مكبرة" />
   </div>
 
   <script src="/socket.io/socket.io.js"></script>

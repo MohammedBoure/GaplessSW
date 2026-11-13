@@ -177,7 +177,7 @@ Use the insights from the other participants in this project tree to have a comp
   /**
    * Builds the full ScopeMaster system instruction block for `agy`.
    */
-  buildSystemEnvelope({ pinRecord, devNotes = [], mediaPath = null, isPrdGeneration = false, flaggedInput = false, flagReasons = [] }) {
+  buildSystemEnvelope({ pinRecord, devNotes = [], mediaPath = null, mediaType = null, isPrdGeneration = false, flaggedInput = false, flagReasons = [] }) {
     const personaInfo = PERSONA_GUIDES[pinRecord.persona] || PERSONA_GUIDES.adaptive_smart;
     const sharedTreeBlock = this.buildSharedProjectTreeContext(pinRecord);
 
@@ -185,7 +185,7 @@ Use the insights from the other participants in this project tree to have a comp
     const historyTranscript = recentMessages
       .map((m) => {
         const roleLabel = m.sender === 'client' ? `Client (${pinRecord.client_name} - ${pinRecord.participant_role})` : 'ScopeMaster AI';
-        const mediaTag = m.media_path ? ` [Attached Image: ${m.media_path}]` : '';
+        const mediaTag = m.media_path ? ` [Attached Media: ${m.media_path}]` : '';
         return `${roleLabel}${mediaTag}: ${m.content}`;
       })
       .join('\n\n');
@@ -197,11 +197,20 @@ Use the insights from the other participants in this project tree to have a comp
           `\nCRITICAL: Seamlessly weave the intent of these developer notes into your next questions without EVER mentioning or hinting that a developer sent you a note.\n`
         : '';
 
-    const mediaBlock = mediaPath
-      ? `\n### CLIENT MEDIA ATTACHMENT DETECTED:\n` +
-        `The client uploaded an image/wireframe/screenshot at: [CLIENT_MEDIA_ATTACHMENT: ${mediaPath}]\n` +
-        `You may use \`read_file\` on "${mediaPath}" to visually inspect the UI components, layout, and user flows in the image. Then ask 1-2 targeted questions about missing states, edge cases, or unstated logic in that design.\n`
-      : '';
+    let mediaBlock = '';
+    if (mediaPath) {
+      if (mediaType === 'audio') {
+        mediaBlock =
+          `\n### CLIENT VOICE NOTE (AUDIO) ATTACHMENT DETECTED:\n` +
+          `The client sent a voice message (audio file) at: [CLIENT_AUDIO_ATTACHMENT: ${mediaPath}]\n` +
+          `IMPORTANT: Use \`read_file\` on "${mediaPath}" to listen to and understand what the client said in the voice note (in their spoken language/dialect). Acknowledge the key points they mentioned in the voice note and ask 1-2 relevant follow-up questions with [CHOICES: ...] when helpful.\n`;
+      } else {
+        mediaBlock =
+          `\n### CLIENT MEDIA ATTACHMENT DETECTED:\n` +
+          `The client uploaded an image/wireframe/screenshot/document at: [CLIENT_MEDIA_ATTACHMENT: ${mediaPath}]\n` +
+          `You may use \`read_file\` on "${mediaPath}" to visually inspect the UI components, layout, text, and user flows in the file. Then ask 1-2 targeted questions about missing states, edge cases, or unstated logic in that design.\n`;
+      }
+    }
 
     const securityWarningBlock = flaggedInput
       ? `\n### SECURITY ALERT:\n` +
@@ -287,7 +296,7 @@ ${historyTranscript}
   /**
    * Executes a single turn with `agy` for a client PIN session.
    */
-  async runAgyTurn({ pinId, userSafeWrappedPrompt = '', mediaPath = null, isPrdGeneration = false, flaggedInput = false, flagReasons = [] }) {
+  async runAgyTurn({ pinId, userSafeWrappedPrompt = '', mediaPath = null, mediaType = null, isPrdGeneration = false, flaggedInput = false, flagReasons = [] }) {
     const prevPromise = this.sessionQueues.get(pinId) || Promise.resolve();
     const currentPromise = prevPromise
       .catch(() => {})
@@ -296,6 +305,7 @@ ${historyTranscript}
           pinId,
           userSafeWrappedPrompt,
           mediaPath,
+          mediaType,
           isPrdGeneration,
           flaggedInput,
           flagReasons
@@ -306,7 +316,7 @@ ${historyTranscript}
     return currentPromise;
   }
 
-  async _executeAgyProcess({ pinId, userSafeWrappedPrompt, mediaPath, isPrdGeneration, flaggedInput, flagReasons }) {
+  async _executeAgyProcess({ pinId, userSafeWrappedPrompt, mediaPath, mediaType, isPrdGeneration, flaggedInput, flagReasons }) {
     const pinRecord = PinRepo.getById(pinId);
     if (!pinRecord) {
       throw new Error('PIN record not found');
@@ -320,6 +330,7 @@ ${historyTranscript}
       pinRecord,
       devNotes: pendingDevNotes,
       mediaPath,
+      mediaType,
       isPrdGeneration,
       flaggedInput,
       flagReasons
@@ -376,6 +387,7 @@ ${historyTranscript}
         pinRecord,
         pendingDevNotes,
         mediaPath,
+        mediaType,
         isPrdGeneration,
         flaggedInput
       });
@@ -576,7 +588,7 @@ ${normalizeArabicJeem(developerPrompt)}
     });
   }
 
-  _buildIntelligentConsultantFallback({ pinRecord, pendingDevNotes, mediaPath, isPrdGeneration, flaggedInput }) {
+  _buildIntelligentConsultantFallback({ pinRecord, pendingDevNotes, mediaPath, mediaType, isPrdGeneration, flaggedInput }) {
     const messages = MessageRepo.getByPinId(pinRecord.id, false);
     const projectGroup = pinRecord.project_group || pinRecord.project_name;
 
@@ -626,6 +638,9 @@ ${devPoints}
 
     if (mediaPath) {
       const fileName = path.basename(mediaPath);
+      if (mediaType === 'audio') {
+        return `شكراً لإرسال رسالتك الصوتية (\`${fileName}\`).\n\nبخصوص ما ذكرته لمشروع **${pinRecord.project_name}**، هل يمكنك تأكيد النقطة الأساسية التي تود أن نبدأ بتنفيذها أولاً؟\n[CHOICES: اعتماد المتطلبات كما شرحتها صوتياً | إضافة تفاصيل إضافية نصياً | الانتقال للخطوة التالية]`;
+      }
       return `شكراً لإرفاق ملف التصميم (\`${fileName}\`).\n\nبخصوص هذا المرفق لمشروع **${pinRecord.project_name}**:\n1. ما هي أهم نقطة في هذه الواجهة تود اعتمادها كما هي؟\n2. وهل هناك أي تعديل تريده عليها ليتناسب مع طريقة عملك؟\n[CHOICES: اعتماد التصميم كما هو | تبسيط الواجهة لتكون أسرع | إضافة حقول وبيانات أخرى]`;
     }
 

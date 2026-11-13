@@ -4,7 +4,7 @@
  * - Rate-limited 4-digit PIN authentication (max 5 failed attempts -> 5-minute lockout)
  * - Real-time lockout countdown status
  * - Client session verification & chat history loading
- * - Client message submission & media uploads (sketches, screenshots, wireframes)
+ * - Client message submission, WhatsApp-style Voice Notes (audio), & Image/PDF uploads
  */
 const express = require('express');
 const path = require('path');
@@ -22,27 +22,67 @@ if (!fs.existsSync(config.UPLOADS_DIR)) {
   fs.mkdirSync(config.UPLOADS_DIR, { recursive: true });
 }
 
+const ALLOWED_IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg'];
+const ALLOWED_AUDIO_EXTS = ['.webm', '.ogg', '.mp3', '.wav', '.m4a', '.aac', '.mp4', '.oga'];
+const ALLOWED_ALL_EXTS = [...ALLOWED_IMAGE_EXTS, ...ALLOWED_AUDIO_EXTS, '.pdf'];
+
+function detectMediaType(file) {
+  if (!file) return null;
+  const mime = String(file.mimetype || '').toLowerCase();
+  const ext = path.extname(file.originalname || file.filename || '').toLowerCase();
+
+  if (mime.startsWith('audio/') || ALLOWED_AUDIO_EXTS.includes(ext) || (mime === 'video/webm' && file.originalname?.startsWith('voice-'))) {
+    return 'audio';
+  }
+  if (mime === 'application/pdf' || ext === '.pdf') {
+    return 'pdf';
+  }
+  return 'image';
+}
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     cb(null, config.UPLOADS_DIR);
   },
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || '').toLowerCase() || '.png';
-    const safeExt = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.pdf'].includes(ext) ? ext : '.png';
-    cb(null, `sketch-${Date.now()}-${uuidv4().slice(0, 8)}${safeExt}`);
+    const mime = String(file.mimetype || '').toLowerCase();
+    let ext = path.extname(file.originalname || '').toLowerCase();
+
+    if (!ext || !ALLOWED_ALL_EXTS.includes(ext)) {
+      if (mime.includes('webm')) ext = '.webm';
+      else if (mime.includes('ogg')) ext = '.ogg';
+      else if (mime.includes('mp4') || mime.includes('m4a')) ext = '.m4a';
+      else if (mime.includes('mpeg') || mime.includes('mp3')) ext = '.mp3';
+      else if (mime.includes('wav')) ext = '.wav';
+      else if (mime.includes('pdf')) ext = '.pdf';
+      else if (mime.includes('jpeg') || mime.includes('jpg')) ext = '.jpg';
+      else if (mime.includes('webp')) ext = '.webp';
+      else ext = '.png';
+    }
+
+    const prefix = mime.startsWith('audio/') || file.originalname?.startsWith('voice-') ? 'voice' : 'media';
+    cb(null, `${prefix}-${Date.now()}-${uuidv4().slice(0, 8)}${ext}`);
   }
 });
 
 const upload = multer({
   storage,
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB max
+    fileSize: 25 * 1024 * 1024 // 25MB max for high-res images & voice notes
   },
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
+    const mime = String(file.mimetype || '').toLowerCase();
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    if (
+      mime.startsWith('image/') ||
+      mime.startsWith('audio/') ||
+      mime === 'video/webm' ||
+      mime === 'application/pdf' ||
+      ALLOWED_ALL_EXTS.includes(ext)
+    ) {
       cb(null, true);
     } else {
-      cb(new Error('Only image files (PNG, JPG, WEBP, SVG) or PDF wireframes are allowed.'));
+      cb(new Error('يرجى إرفاق صورة، رسالة صوتية، أو ملف PDF فقط.'));
     }
   }
 });
@@ -216,14 +256,14 @@ module.exports = function createClientRouter(io) {
    * POST /api/client/logout
    * Clears client session cookie.
    */
-  router.post('/logout', (req, res) => {
+  router.post('/logout', (_req, res) => {
     res.clearCookie('gapless_client_token');
     res.json({ success: true });
   });
 
   /**
    * POST /api/client/message
-   * Submits a conversational message and/or uploaded wireframe/screenshot to `agy`.
+   * Submits a conversational message, voice note (audio), or image/wireframe to `agy`.
    */
   router.post('/message', requireClientAuth, upload.single('media'), async (req, res) => {
     try {
@@ -235,13 +275,22 @@ module.exports = function createClientRouter(io) {
 
       const rawText = req.body?.content || '';
       const uploadedFile = req.file || null;
+      const mediaType = detectMediaType(uploadedFile);
+      const audioDuration = req.body?.audio_duration ? parseFloat(req.body.audio_duration) : null;
 
       if (!rawText.trim() && !uploadedFile) {
-        return res.status(400).json({ error: 'يرجى كتابة رسالة أو إرفاق صورة.' });
+        return res.status(400).json({ error: 'يرجى كتابة رسالة، تسجيل مقطع صوتي، أو إرفاق صورة.' });
       }
 
+      const defaultPromptText =
+        mediaType === 'audio'
+          ? 'أرسلت رسالة صوتية، يرجى الاستماع إليها وتحليل ما ورد فيها والرد علي.'
+          : mediaType === 'pdf'
+          ? 'أرفقت ملف PDF لتفاصيل التصميم للمناقشة.'
+          : 'أرفقت صورة لتصميم أو توضيح للمناقشة.';
+
       // 1. Strict Input Sanitization & Prompt Injection Check
-      const sanitized = sanitizeClientInput(rawText || (uploadedFile ? 'أرفقت صورة لتصميم مقترح للمناقشة.' : ''));
+      const sanitized = sanitizeClientInput(rawText.trim() || defaultPromptText);
 
       if (sanitized.flagged) {
         SecurityEventRepo.log({
@@ -262,15 +311,27 @@ module.exports = function createClientRouter(io) {
       const mediaPath = uploadedFile ? uploadedFile.path : null;
       const mediaUrl = uploadedFile ? `/uploads/${uploadedFile.filename}` : null;
 
+      // Display text stored on the client message bubble (keep empty or caption if audio/image was sent without text)
+      const bubbleContent = rawText.trim()
+        ? sanitized.cleanText
+        : mediaType === 'audio'
+        ? 'رسالة صوتية'
+        : mediaType === 'pdf'
+        ? `ملف مرفق (${uploadedFile.originalname || 'PDF'})`
+        : '';
+
       // 2. Save client message
       const clientMsg = MessageRepo.create({
         pin_id: pinRecord.id,
         sender: 'client',
-        content: sanitized.cleanText,
+        content: bubbleContent,
         media_path: mediaPath,
         media_url: mediaUrl,
         is_internal: 0,
         metadata: {
+          mediaType,
+          audioDuration,
+          originalName: uploadedFile ? uploadedFile.originalname : null,
           flagged: sanitized.flagged,
           reasons: sanitized.reasons
         }
@@ -284,11 +345,12 @@ module.exports = function createClientRouter(io) {
       io.to(`pin:${pinRecord.id}`).emit('chat:typing', { isTyping: true, sender: 'ai' });
       io.to('dev_monitors').emit('dev:typing', { pinId: pinRecord.id, isTyping: true });
 
-      // 3. Invoke `agy` in strict sandbox mode
+      // 3. Invoke `agy` in strict sandbox mode (with multimodal audio/image support)
       const agyResult = await agyManager.runAgyTurn({
         pinId: pinRecord.id,
         userSafeWrappedPrompt: sanitized.safeWrappedText,
         mediaPath,
+        mediaType,
         isPrdGeneration: false,
         flaggedInput: sanitized.flagged,
         flagReasons: sanitized.reasons

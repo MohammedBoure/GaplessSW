@@ -27,14 +27,26 @@
   const typingIndicatorRow = document.getElementById('typingIndicatorRow');
   const exitSessionBtn = document.getElementById('exitSessionBtn');
 
+  const chatComposerWrapper = document.getElementById('chatComposerWrapper');
   const chatComposerForm = document.getElementById('chatComposerForm');
   const messageInput = document.getElementById('messageInput');
   const sendMessageBtn = document.getElementById('sendMessageBtn');
+  const recordVoiceBtn = document.getElementById('recordVoiceBtn');
   const triggerUploadBtn = document.getElementById('triggerUploadBtn');
   const mediaUploadInput = document.getElementById('mediaUploadInput');
   const mediaPreviewChip = document.getElementById('mediaPreviewChip');
+  const mediaPreviewThumb = document.getElementById('mediaPreviewThumb');
   const mediaFileNameText = document.getElementById('mediaFileNameText');
   const removeMediaBtn = document.getElementById('removeMediaBtn');
+
+  const voiceRecordingBar = document.getElementById('voiceRecordingBar');
+  const cancelRecordingBtn = document.getElementById('cancelRecordingBtn');
+  const sendRecordingBtn = document.getElementById('sendRecordingBtn');
+  const recordingTimerText = document.getElementById('recordingTimerText');
+
+  const imageLightboxModal = document.getElementById('imageLightboxModal');
+  const lightboxImage = document.getElementById('lightboxImage');
+  const closeLightboxBtn = document.getElementById('closeLightboxBtn');
 
   let currentPinDigits = [];
   let isLockedOut = false;
@@ -43,6 +55,15 @@
   let activeSession = null;
   let renderedMessageIds = new Set();
   let isSubmittingMessage = false;
+
+  let pendingMediaFile = null;
+  let pendingThumbUrl = null;
+  let mediaRecorder = null;
+  let recordingStream = null;
+  let recordingChunks = [];
+  let recordingStartTime = 0;
+  let recordingTimerInterval = null;
+  let isRecordingCancelled = false;
 
   const socket = io();
 
@@ -243,11 +264,38 @@
 
     let mediaHtml = '';
     if (msg.media_url) {
-      mediaHtml = `
-        <div class="msg-media-preview">
-          <img src="${msg.media_url}" alt="مرفق التصميم" onclick="window.open('${msg.media_url}', '_blank')" />
-        </div>
-      `;
+      const isAudio =
+        meta.mediaType === 'audio' ||
+        /\.(webm|ogg|mp3|wav|m4a|aac)(\?|$)/i.test(msg.media_url);
+      const isPdf = meta.mediaType === 'pdf' || /\.pdf(\?|$)/i.test(msg.media_url);
+
+      if (isAudio) {
+        const durationLabel = meta.audioDuration ? ` (${meta.audioDuration})` : '';
+        mediaHtml = `
+          <div class="audio-bubble-player">
+            <div class="audio-bubble-header">
+              <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+              <span>رسالة صوتية${escapeHtml(durationLabel)}</span>
+            </div>
+            <audio controls preload="metadata" src="${msg.media_url}"></audio>
+          </div>
+        `;
+      } else if (isPdf) {
+        mediaHtml = `
+          <div class="msg-media-preview" style="padding:10px 12px;">
+            <a href="${msg.media_url}" target="_blank" rel="noopener noreferrer" style="color:inherit; font-weight:600; text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
+              <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <span>فتح ملف PDF المرفق</span>
+            </a>
+          </div>
+        `;
+      } else {
+        mediaHtml = `
+          <div class="msg-media-preview">
+            <img src="${msg.media_url}" alt="مرفق التصميم" class="chat-zoomable-img" data-full-src="${msg.media_url}" />
+          </div>
+        `;
+      }
     }
 
     // Render interactive choice chips if this is an AI message and choices exist
@@ -284,8 +332,15 @@
     scrollToBottom();
   }
 
-  // Handle clicking on an interactive choice chip
+  // Handle clicking on an interactive choice chip or zoomable image
   chatMessagesContainer.addEventListener('click', (e) => {
+    const zoomImg = e.target.closest('.chat-zoomable-img[data-full-src]');
+    if (zoomImg && imageLightboxModal && lightboxImage) {
+      lightboxImage.src = zoomImg.dataset.fullSrc;
+      imageLightboxModal.classList.remove('hidden');
+      return;
+    }
+
     const chipBtn = e.target.closest('.choice-chip-btn[data-choice-value]');
     if (!chipBtn || isSubmittingMessage) return;
 
@@ -356,6 +411,53 @@
     pinGatewayScreen.classList.remove('hidden');
   });
 
+  function updateComposerActionButton() {
+    const hasContent = messageInput.value.trim().length > 0 || Boolean(pendingMediaFile);
+    if (hasContent) {
+      sendMessageBtn.classList.remove('hidden');
+      recordVoiceBtn.classList.add('hidden');
+    } else {
+      sendMessageBtn.classList.add('hidden');
+      recordVoiceBtn.classList.remove('hidden');
+    }
+  }
+
+  function clearPendingMedia() {
+    pendingMediaFile = null;
+    mediaUploadInput.value = '';
+    mediaPreviewChip.classList.add('hidden');
+    if (pendingThumbUrl) {
+      URL.revokeObjectURL(pendingThumbUrl);
+      pendingThumbUrl = null;
+    }
+    mediaPreviewThumb.src = '';
+    mediaPreviewThumb.classList.add('hidden');
+    updateComposerActionButton();
+  }
+
+  function setPendingMediaFile(file) {
+    if (!file) {
+      clearPendingMedia();
+      return;
+    }
+    pendingMediaFile = file;
+    mediaFileNameText.textContent = file.name || 'ملف مرفق';
+    if (pendingThumbUrl) {
+      URL.revokeObjectURL(pendingThumbUrl);
+      pendingThumbUrl = null;
+    }
+    if (file.type && file.type.startsWith('image/')) {
+      pendingThumbUrl = URL.createObjectURL(file);
+      mediaPreviewThumb.src = pendingThumbUrl;
+      mediaPreviewThumb.classList.remove('hidden');
+    } else {
+      mediaPreviewThumb.src = '';
+      mediaPreviewThumb.classList.add('hidden');
+    }
+    mediaPreviewChip.classList.remove('hidden');
+    updateComposerActionButton();
+  }
+
   let typingTimeout = null;
   messageInput.addEventListener('input', () => {
     const start = messageInput.selectionStart;
@@ -368,6 +470,7 @@
 
     messageInput.style.height = 'auto';
     messageInput.style.height = `${Math.min(messageInput.scrollHeight, 110)}px`;
+    updateComposerActionButton();
 
     socket.emit('client:typing', { isTyping: messageInput.value.trim().length > 0 });
     clearTimeout(typingTimeout);
@@ -383,47 +486,106 @@
     }
   });
 
+  // Support pasting screenshots directly from clipboard (Ctrl+V)
+  messageInput.addEventListener('paste', (e) => {
+    const items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type && item.type.startsWith('image/')) {
+        const blob = item.getAsFile();
+        if (blob) {
+          e.preventDefault();
+          const ext = (blob.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+          const pastedFile = new File([blob], `screenshot-${Date.now()}.${ext}`, { type: blob.type });
+          setPendingMediaFile(pastedFile);
+          break;
+        }
+      }
+    }
+  });
+
+  // Support drag-and-drop images/audio onto the composer
+  if (chatComposerWrapper) {
+    ['dragenter', 'dragover'].forEach((evt) => {
+      chatComposerWrapper.addEventListener(evt, (e) => {
+        e.preventDefault();
+        chatComposerWrapper.classList.add('drag-over');
+      });
+    });
+    ['dragleave', 'drop'].forEach((evt) => {
+      chatComposerWrapper.addEventListener(evt, (e) => {
+        e.preventDefault();
+        chatComposerWrapper.classList.remove('drag-over');
+      });
+    });
+    chatComposerWrapper.addEventListener('drop', (e) => {
+      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) {
+        setPendingMediaFile(file);
+      }
+    });
+  }
+
   triggerUploadBtn.addEventListener('click', () => {
     mediaUploadInput.click();
   });
 
   mediaUploadInput.addEventListener('change', () => {
     const file = mediaUploadInput.files[0];
-    if (file) {
-      mediaFileNameText.textContent = file.name;
-      mediaPreviewChip.classList.remove('hidden');
-    } else {
-      mediaPreviewChip.classList.add('hidden');
-    }
+    setPendingMediaFile(file || null);
   });
 
   removeMediaBtn.addEventListener('click', () => {
-    mediaUploadInput.value = '';
-    mediaPreviewChip.classList.add('hidden');
+    clearPendingMedia();
   });
 
-  chatComposerForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (isSubmittingMessage || !activeSession) return;
+  // Lightbox close handlers
+  if (closeLightboxBtn && imageLightboxModal) {
+    closeLightboxBtn.addEventListener('click', () => imageLightboxModal.classList.add('hidden'));
+    imageLightboxModal.addEventListener('click', (e) => {
+      if (e.target === imageLightboxModal) imageLightboxModal.classList.add('hidden');
+    });
+  }
 
-    const text = normalizeTextJeem(messageInput.value.trim());
-    const file = mediaUploadInput.files[0];
+  function formatDurationMMSS(ms) {
+    const totalSec = Math.max(0, Math.floor(ms / 1000));
+    const mins = Math.floor(totalSec / 60);
+    const secs = String(totalSec % 60).padStart(2, '0');
+    return `${mins}:${secs}`;
+  }
+
+  function stopRecordingStream() {
+    if (recordingTimerInterval) {
+      clearInterval(recordingTimerInterval);
+      recordingTimerInterval = null;
+    }
+    if (recordingStream) {
+      recordingStream.getTracks().forEach((t) => t.stop());
+      recordingStream = null;
+    }
+  }
+
+  async function sendClientPayload({ text = '', file = null, audioDuration = '' }) {
+    if (isSubmittingMessage || !activeSession) return;
     if (!text && !file) return;
 
     isSubmittingMessage = true;
     sendMessageBtn.disabled = true;
+    recordVoiceBtn.disabled = true;
     triggerUploadBtn.disabled = true;
 
     const formData = new FormData();
     formData.append('content', text);
+    if (audioDuration) {
+      formData.append('audio_duration', audioDuration);
+    }
     if (file) {
       formData.append('media', file);
     }
 
     messageInput.value = '';
     messageInput.style.height = 'auto';
-    mediaUploadInput.value = '';
-    mediaPreviewChip.classList.add('hidden');
+    clearPendingMedia();
     socket.emit('client:typing', { isTyping: false });
 
     typingIndicatorRow.classList.remove('hidden');
@@ -451,9 +613,89 @@
     } finally {
       isSubmittingMessage = false;
       sendMessageBtn.disabled = false;
+      recordVoiceBtn.disabled = false;
       triggerUploadBtn.disabled = false;
+      updateComposerActionButton();
       messageInput.focus();
     }
+  }
+
+  recordVoiceBtn.addEventListener('click', async () => {
+    if (isSubmittingMessage || !activeSession) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
+      alert('متصفحك لا يدعم تسجيل الصوت مباشرة، يمكنك إرفاق ملف صوتي عبر زر المشبك.');
+      return;
+    }
+
+    try {
+      recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const preferredMime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'].find((m) =>
+        MediaRecorder.isTypeSupported(m)
+      );
+      mediaRecorder = preferredMime ? new MediaRecorder(recordingStream, { mimeType: preferredMime }) : new MediaRecorder(recordingStream);
+      recordingChunks = [];
+      isRecordingCancelled = false;
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) recordingChunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        const durationStr = formatDurationMMSS(Date.now() - recordingStartTime);
+        const mimeType = mediaRecorder.mimeType || 'audio/webm';
+        stopRecordingStream();
+        voiceRecordingBar.classList.add('hidden');
+        chatComposerForm.classList.remove('hidden');
+
+        if (isRecordingCancelled || recordingChunks.length === 0) {
+          return;
+        }
+
+        const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'm4a' : 'webm';
+        const audioBlob = new Blob(recordingChunks, { type: mimeType });
+        const voiceFile = new File([audioBlob], `voice-${Date.now()}.${ext}`, { type: mimeType });
+        await sendClientPayload({ text: '', file: voiceFile, audioDuration: durationStr });
+      };
+
+      recordingStartTime = Date.now();
+      recordingTimerText.textContent = '0:00';
+      chatComposerForm.classList.add('hidden');
+      voiceRecordingBar.classList.remove('hidden');
+
+      recordingTimerInterval = setInterval(() => {
+        recordingTimerText.textContent = formatDurationMMSS(Date.now() - recordingStartTime);
+      }, 400);
+
+      mediaRecorder.start();
+    } catch {
+      stopRecordingStream();
+      alert('تعذر الوصول إلى الميكروفون. يرجى السماح بصلاحية الميكروفون في المتصفح.');
+    }
+  });
+
+  cancelRecordingBtn.addEventListener('click', () => {
+    isRecordingCancelled = true;
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    } else {
+      stopRecordingStream();
+      voiceRecordingBar.classList.add('hidden');
+      chatComposerForm.classList.remove('hidden');
+    }
+  });
+
+  sendRecordingBtn.addEventListener('click', () => {
+    isRecordingCancelled = false;
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+  });
+
+  chatComposerForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = normalizeTextJeem(messageInput.value.trim());
+    const file = pendingMediaFile;
+    await sendClientPayload({ text, file });
   });
 
   socket.on('chat:message', (msg) => {

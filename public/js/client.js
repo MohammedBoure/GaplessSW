@@ -58,13 +58,34 @@
   const micNativeFallbackBtn = document.getElementById('micNativeFallbackBtn');
   const micCancelModalBtn = document.getElementById('micCancelModalBtn');
 
+  const connectionStatusDot = document.getElementById('connectionStatusDot');
+  const offlineReconnectBanner = document.getElementById('offlineReconnectBanner');
+  const toggleSearchBtn = document.getElementById('toggleSearchBtn');
+  const chatSearchBar = document.getElementById('chatSearchBar');
+  const chatSearchInput = document.getElementById('chatSearchInput');
+  const chatSearchCount = document.getElementById('chatSearchCount');
+  const closeSearchBtn = document.getElementById('closeSearchBtn');
+  const scrollToBottomBtn = document.getElementById('scrollToBottomBtn');
+  const unreadScrollBadge = document.getElementById('unreadScrollBadge');
+  const headerInfoTrigger = document.getElementById('headerInfoTrigger');
+  const openSessionInfoBtn = document.getElementById('openSessionInfoBtn');
+  const sessionInfoModal = document.getElementById('sessionInfoModal');
+  const closeSessionInfoBtn = document.getElementById('closeSessionInfoBtn');
+  const sessionStatsGrid = document.getElementById('sessionStatsGrid');
+  const exportChatBtn = document.getElementById('exportChatBtn');
+  const installPwaBtn = document.getElementById('installPwaBtn');
+  const clientToastContainer = document.getElementById('clientToastContainer');
+
   let currentPinDigits = [];
   let isLockedOut = false;
   let lockoutInterval = null;
   let clientToken = localStorage.getItem('gapless_client_token') || null;
   let activeSession = null;
   let renderedMessageIds = new Set();
+  let sessionMessagesCache = [];
   let isSubmittingMessage = false;
+  let unreadWhileScrolled = 0;
+  let deferredInstallPrompt = null;
 
   let pendingMediaFile = null;
   let pendingThumbUrl = null;
@@ -76,6 +97,22 @@
   let isRecordingCancelled = false;
 
   const socket = io();
+
+  function showToast(message, type = 'info') {
+    if (!clientToastContainer) return;
+    const toast = document.createElement('div');
+    toast.className = `toast-item ${type}`;
+    toast.textContent = normalizeTextJeem(message);
+    clientToastContainer.appendChild(toast);
+    setTimeout(() => {
+      toast.remove();
+    }, 3400);
+  }
+
+  function isNearBottom() {
+    if (!chatMessagesContainer) return true;
+    return chatMessagesContainer.scrollHeight - chatMessagesContainer.scrollTop - chatMessagesContainer.clientHeight < 120;
+  }
 
   function normalizeTextJeem(str) {
     if (typeof str !== 'string') return '';
@@ -325,6 +362,14 @@
     }
 
     const senderLabel = msg.sender === 'client' ? 'أنت' : 'مستشار التحليل الذكي';
+    const copyBtnHtml =
+      msg.sender === 'ai' && msg.content
+        ? `<button type="button" class="msg-copy-btn" data-copy-msg="1" title="نسخ النص"><svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>نسخ</span></button>`
+        : '';
+
+    row.dataset.rawText = normalizeTextJeem(String(msg.content || '')).toLowerCase();
+    sessionMessagesCache.push(msg);
+
     row.innerHTML = `
       <div class="msg-bubble">
         ${mediaHtml}
@@ -335,15 +380,36 @@
         <span>${senderLabel}</span>
         <span>•</span>
         <span>${formatTime(msg.created_at)}</span>
+        ${copyBtnHtml}
       </div>
     `;
 
+    const wasNearBottom = isNearBottom();
     chatMessagesContainer.appendChild(row);
-    scrollToBottom();
+    if (wasNearBottom || msg.sender === 'client') {
+      scrollToBottom();
+    } else {
+      unreadWhileScrolled += 1;
+      if (unreadScrollBadge && scrollToBottomBtn) {
+        unreadScrollBadge.textContent = String(unreadWhileScrolled);
+        unreadScrollBadge.classList.remove('hidden');
+        scrollToBottomBtn.classList.remove('hidden');
+      }
+    }
   }
 
-  // Handle clicking on an interactive choice chip or zoomable image
+  // Handle clicking on copy button, choice chip, or zoomable image
   chatMessagesContainer.addEventListener('click', (e) => {
+    const copyBtn = e.target.closest('.msg-copy-btn[data-copy-msg]');
+    if (copyBtn) {
+      const bubble = copyBtn.closest('.msg-row')?.querySelector('.msg-bubble');
+      const textToCopy = bubble ? bubble.innerText.trim() : '';
+      if (textToCopy && navigator.clipboard) {
+        navigator.clipboard.writeText(textToCopy).then(() => showToast('تم نسخ النص بنجاح', 'success')).catch(() => {});
+      }
+      return;
+    }
+
     const zoomImg = e.target.closest('.chat-zoomable-img[data-full-src]');
     if (zoomImg && imageLightboxModal && lightboxImage) {
       lightboxImage.src = zoomImg.dataset.fullSrc;
@@ -380,6 +446,10 @@
 
     chatMessagesContainer.innerHTML = '';
     renderedMessageIds.clear();
+    sessionMessagesCache = [];
+    unreadWhileScrolled = 0;
+    if (scrollToBottomBtn) scrollToBottomBtn.classList.add('hidden');
+    if (unreadScrollBadge) unreadScrollBadge.classList.add('hidden');
     messages.forEach(appendMessageBubble);
 
     socket.emit('client:join', { token: clientToken });
@@ -615,11 +685,11 @@
         if (data.clientMessage) appendMessageBubble(data.clientMessage);
         if (data.aiMessage) appendMessageBubble(data.aiMessage);
       } else {
-        alert(data.error || 'تعذر إرسال الرسالة.');
+        showToast(data.error || 'تعذر إرسال الرسالة.', 'error');
       }
     } catch {
       typingIndicatorRow.classList.add('hidden');
-      alert('حدث خطأ في الاتصال بالخادم.');
+      showToast('حدث خطأ في الاتصال بالخادم.', 'error');
     } finally {
       isSubmittingMessage = false;
       sendMessageBtn.disabled = false;
@@ -847,25 +917,179 @@
     await sendClientPayload({ text, file });
   });
 
+  socket.on('connect', () => {
+    if (connectionStatusDot) connectionStatusDot.classList.remove('offline');
+    if (offlineReconnectBanner) offlineReconnectBanner.classList.add('hidden');
+    if (activeSession && clientToken) {
+      socket.emit('client:join', { token: clientToken });
+    }
+  });
+
+  socket.on('disconnect', () => {
+    if (connectionStatusDot) connectionStatusDot.classList.add('offline');
+    if (offlineReconnectBanner && activeSession) offlineReconnectBanner.classList.remove('hidden');
+  });
+
   socket.on('chat:message', (msg) => {
     appendMessageBubble(msg);
   });
 
   socket.on('chat:typing', ({ isTyping }) => {
     typingIndicatorRow.classList.toggle('hidden', !isTyping);
-    if (isTyping) scrollToBottom();
+    if (isTyping && isNearBottom()) scrollToBottom();
   });
 
   socket.on('chat:reset', ({ messages }) => {
     chatMessagesContainer.innerHTML = '';
     renderedMessageIds.clear();
+    sessionMessagesCache = [];
     (messages || []).forEach(appendMessageBubble);
   });
 
   socket.on('session:revoked', ({ message }) => {
-    alert(message || 'تم إيقاف الجلسة من قبل الإدارة.');
-    exitSessionBtn.click();
+    showToast(message || 'تم إيقاف الجلسة من قبل الإدارة.', 'error');
+    setTimeout(() => exitSessionBtn.click(), 1200);
   });
+
+  // Scroll-to-bottom FAB & unread counter
+  if (chatMessagesContainer && scrollToBottomBtn) {
+    chatMessagesContainer.addEventListener('scroll', () => {
+      if (isNearBottom()) {
+        scrollToBottomBtn.classList.add('hidden');
+        unreadWhileScrolled = 0;
+        if (unreadScrollBadge) unreadScrollBadge.classList.add('hidden');
+      } else {
+        scrollToBottomBtn.classList.remove('hidden');
+      }
+    });
+
+    scrollToBottomBtn.addEventListener('click', () => {
+      scrollToBottom();
+      scrollToBottomBtn.classList.add('hidden');
+      unreadWhileScrolled = 0;
+      if (unreadScrollBadge) unreadScrollBadge.classList.add('hidden');
+    });
+  }
+
+  // In-chat search bar
+  function applyChatSearch(query) {
+    const q = normalizeTextJeem(String(query || '').trim()).toLowerCase();
+    const rows = Array.from(chatMessagesContainer.querySelectorAll('.msg-row'));
+    let matches = 0;
+    rows.forEach((row) => {
+      row.classList.remove('search-dimmed', 'search-match');
+      if (!q) return;
+      if ((row.dataset.rawText || '').includes(q)) {
+        row.classList.add('search-match');
+        matches += 1;
+      } else {
+        row.classList.add('search-dimmed');
+      }
+    });
+    if (chatSearchCount) {
+      if (!q) {
+        chatSearchCount.classList.add('hidden');
+      } else {
+        chatSearchCount.textContent = String(matches);
+        chatSearchCount.classList.remove('hidden');
+      }
+    }
+  }
+
+  if (toggleSearchBtn && chatSearchBar && chatSearchInput && closeSearchBtn) {
+    toggleSearchBtn.addEventListener('click', () => {
+      chatSearchBar.classList.toggle('hidden');
+      if (!chatSearchBar.classList.contains('hidden')) {
+        chatSearchInput.focus();
+      } else {
+        chatSearchInput.value = '';
+        applyChatSearch('');
+      }
+    });
+    chatSearchInput.addEventListener('input', () => applyChatSearch(chatSearchInput.value));
+    closeSearchBtn.addEventListener('click', () => {
+      chatSearchBar.classList.add('hidden');
+      chatSearchInput.value = '';
+      applyChatSearch('');
+    });
+  }
+
+  // Session Info & Export Modal
+  function openSessionInfoModal() {
+    if (!sessionInfoModal || !activeSession) return;
+    const totalMsgs = sessionMessagesCache.length;
+    const voiceCount = sessionMessagesCache.filter((m) => {
+      const meta = parseMsgMetadata(m);
+      return meta.mediaType === 'audio' || (m.media_url && /\.(webm|ogg|mp3|wav|m4a|aac)(\?|$)/i.test(m.media_url));
+    }).length;
+    const mediaCount = sessionMessagesCache.filter((m) => m.media_url).length - voiceCount;
+
+    sessionStatsGrid.innerHTML = `
+      <div class="session-stat-item"><div class="session-stat-label">المشروع</div><div class="session-stat-value">${escapeHtml(activeSession.projectGroup || activeSession.projectName)}</div></div>
+      <div class="session-stat-item"><div class="session-stat-label">المشارك</div><div class="session-stat-value">${escapeHtml(activeSession.clientName)} (#${escapeHtml(activeSession.pin)})</div></div>
+      <div class="session-stat-item"><div class="session-stat-label">إجمالي الرسائل</div><div class="session-stat-value">${totalMsgs}</div></div>
+      <div class="session-stat-item"><div class="session-stat-label">الصوتيات / المرفقات</div><div class="session-stat-value">${voiceCount} صوت • ${Math.max(0, mediaCount)} مرفق</div></div>
+    `;
+    sessionInfoModal.classList.remove('hidden');
+  }
+
+  if (openSessionInfoBtn) openSessionInfoBtn.addEventListener('click', openSessionInfoModal);
+  if (headerInfoTrigger) headerInfoTrigger.addEventListener('click', openSessionInfoModal);
+  if (closeSessionInfoBtn && sessionInfoModal) {
+    closeSessionInfoBtn.addEventListener('click', () => sessionInfoModal.classList.add('hidden'));
+    sessionInfoModal.addEventListener('click', (e) => {
+      if (e.target === sessionInfoModal) sessionInfoModal.classList.add('hidden');
+    });
+  }
+
+  if (exportChatBtn) {
+    exportChatBtn.addEventListener('click', () => {
+      if (!activeSession || sessionMessagesCache.length === 0) {
+        showToast('لا توجد رسائل لتصديرها بعد', 'error');
+        return;
+      }
+      const lines = [
+        `Gapless — سجل جلسة استكشاف المتطلبات`,
+        `المشروع: ${activeSession.projectGroup || activeSession.projectName}`,
+        `المشارك: ${activeSession.clientName} (#${activeSession.pin})`,
+        `تاريخ التصدير: ${new Date().toLocaleString('ar-DZ')}`,
+        `==================================================`,
+        ''
+      ];
+      sessionMessagesCache.forEach((m) => {
+        const who = m.sender === 'client' ? activeSession.clientName : 'المستشار الذكي';
+        const time = formatTime(m.created_at);
+        lines.push(`[${time}] ${who}: ${m.content || ''}${m.media_url ? ` (مرفق: ${m.media_url})` : ''}`);
+      });
+      const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gapless-${activeSession.pin}-${Date.now()}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('تم تحميل سجل المحادثة', 'success');
+    });
+  }
+
+  // PWA Service Worker & Install Prompt
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    if (installPwaBtn) installPwaBtn.classList.remove('hidden');
+  });
+  if (installPwaBtn) {
+    installPwaBtn.addEventListener('click', async () => {
+      if (!deferredInstallPrompt) return;
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      installPwaBtn.classList.add('hidden');
+    });
+  }
 
   tryRestoreExistingSession();
 })();

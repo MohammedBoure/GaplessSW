@@ -1383,6 +1383,214 @@ html, body {
   gap: 6px;
 }
 
+.icon-btn-sm {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+}
+
+.status-dot.offline {
+  background: var(--accent-rose);
+  box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.25);
+}
+
+.reconnect-banner {
+  background: var(--accent-amber-soft);
+  color: var(--accent-amber);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.35);
+  padding: 6px 14px;
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.chat-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.chat-search-bar input {
+  flex: 1;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-arabic);
+  font-size: 0.85rem;
+  padding: 6px 10px;
+  outline: none;
+}
+
+.search-count-badge {
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: var(--brand-text);
+  background: var(--brand-soft);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.msg-row.search-dimmed {
+  opacity: 0.28;
+}
+
+.msg-row.search-match .msg-bubble {
+  outline: 2px solid var(--brand-primary);
+}
+
+.msg-copy-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-arabic);
+  font-size: 0.72rem;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.msg-copy-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+.chat-screen {
+  position: relative;
+}
+
+.scroll-fab {
+  position: absolute;
+  left: 16px;
+  bottom: 84px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-md, 0 6px 18px rgba(0, 0, 0, 0.25));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 15;
+}
+
+.scroll-fab-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--brand-primary);
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.session-info-card {
+  text-align: right;
+  max-width: 440px;
+}
+
+.session-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.session-stat-item {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.session-stat-label {
+  font-size: 0.73rem;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.session-stat-value {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.session-guide-box {
+  background: var(--brand-soft);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 14px;
+}
+
+.session-guide-box ul {
+  margin: 0;
+  padding-right: 18px;
+  line-height: 1.6;
+}
+
+.toast-container {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(92vw, 380px);
+  pointer-events: none;
+}
+
+.toast-item {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+  text-align: center;
+  animation: toastSlideIn 0.2s ease-out;
+}
+
+.toast-item.error {
+  border-color: var(--accent-rose);
+  color: var(--accent-rose);
+}
+
+.toast-item.success {
+  border-color: var(--accent-emerald);
+  color: var(--accent-emerald);
+}
+
+@keyframes toastSlideIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .hidden {
   display: none !important;
 }

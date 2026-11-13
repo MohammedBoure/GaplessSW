@@ -33,6 +33,10 @@ module.exports = {
 
   // AGY CLI settings
   AGY_BIN: process.env.AGY_BIN || '/home/pluto/.local/bin/agy',
-  AGY_MODEL: process.env.AGY_MODEL || 'gemini-3.8-flash-low',
-  AGY_TIMEOUT_MS: parseInt(process.env.AGY_TIMEOUT_MS || '90000', 10),
+  AGY_MODEL: process.env.AGY_MODEL || 'gemini-4-hydrogen-low',
+  AGY_FALLBACK_MODELS: (process.env.AGY_FALLBACK_MODELS || 'gemini-3.8-flash-medium,gemini-4-argon-low,gemini-3.8-flash-low')
+    .split(',')
+    .map((m) => m.trim())
+    .filter(Boolean),
+  AGY_TIMEOUT_MS: parseInt(process.env.AGY_TIMEOUT_MS || '45000', 10),
 };

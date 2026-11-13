@@ -340,29 +340,34 @@ ${historyTranscript}
       ? `${systemEnvelope}\n\n[GENERATE_PRD]`
       : `${systemEnvelope}\n\n${userSafeWrappedPrompt}`;
 
-    const args = [
-      '--sandbox',
-      '--model',
-      config.AGY_MODEL,
-      '--effort',
-      'low',
-      '--disable-slash-commands',
-      '--output-format',
-      'json',
-      '--add-dir',
-      config.UPLOADS_DIR,
-      '--add-dir',
-      config.PROJECT_TREES_DIR
-    ];
+    const buildArgsForModel = (modelName, includeConversation = true) => {
+      const args = [
+        '--sandbox',
+        '--model',
+        modelName,
+        '--effort',
+        'low',
+        '--disable-slash-commands',
+        '--print-timeout',
+        '35s',
+        '--output-format',
+        'json',
+        '--add-dir',
+        config.UPLOADS_DIR,
+        '--add-dir',
+        config.PROJECT_TREES_DIR
+      ];
 
-    if (pinRecord.conversation_id) {
-      args.push('--conversation', pinRecord.conversation_id);
-    }
+      if (includeConversation && pinRecord.conversation_id) {
+        args.push('--conversation', pinRecord.conversation_id);
+      }
 
-    args.push('-p', fullPrompt);
+      args.push('-p', fullPrompt);
+      return args;
+    };
 
     try {
-      const result = await this._spawnAgyBinary(pinId, args);
+      const { result, modelUsed } = await this._spawnWithModelFailover(pinId, buildArgsForModel);
       if (result.conversation_id && result.conversation_id !== pinRecord.conversation_id) {
         PinRepo.updateConversationId(pinId, result.conversation_id);
       }
@@ -378,7 +383,7 @@ ${historyTranscript}
         response: cleanText,
         choices: isPrdGeneration ? [] : choices,
         conversationId: result.conversation_id || pinRecord.conversation_id,
-        engine: 'agy-cli-sandbox-flash',
+        engine: `agy-cli-sandbox (${modelUsed})`,
         usage: result.usage || null
       };
     } catch (err) {
@@ -474,27 +479,32 @@ Developer Question / Request:
 ${normalizeArabicJeem(developerPrompt)}
 `.trim();
 
-    const args = [
-      '--sandbox',
-      '--model',
-      config.AGY_MODEL,
-      '--effort',
-      'low',
-      '--disable-slash-commands',
-      '--output-format',
-      'json',
-      '--add-dir',
-      config.PROJECT_TREES_DIR
-    ];
+    const buildArgsForModel = (modelName, includeConversation = true) => {
+      const args = [
+        '--sandbox',
+        '--model',
+        modelName,
+        '--effort',
+        'low',
+        '--disable-slash-commands',
+        '--print-timeout',
+        '35s',
+        '--output-format',
+        'json',
+        '--add-dir',
+        config.PROJECT_TREES_DIR
+      ];
 
-    if (thread.conversation_id) {
-      args.push('--conversation', thread.conversation_id);
-    }
+      if (includeConversation && thread.conversation_id) {
+        args.push('--conversation', thread.conversation_id);
+      }
 
-    args.push('-p', promptEnvelope);
+      args.push('-p', promptEnvelope);
+      return args;
+    };
 
     try {
-      const result = await this._spawnAgyBinary(`dev-${threadId}`, args);
+      const { result, modelUsed } = await this._spawnWithModelFailover(`dev-${threadId}`, buildArgsForModel);
       if (result.conversation_id && result.conversation_id !== thread.conversation_id) {
         DevAiRepo.updateConversationId(threadId, result.conversation_id);
       }
@@ -503,7 +513,7 @@ ${normalizeArabicJeem(developerPrompt)}
       return {
         response: clean,
         conversationId: result.conversation_id || thread.conversation_id,
-        engine: 'agy-cli-sandbox-flash'
+        engine: `agy-cli-sandbox (${modelUsed})`
       };
     } catch (err) {
       console.error(`[AgySessionManager] Dev assistant fallback (${err.message})`);
@@ -516,6 +526,27 @@ ${normalizeArabicJeem(developerPrompt)}
         engine: 'agy-resilient-guard'
       };
     }
+  }
+
+  async _spawnWithModelFailover(sessionKey, buildArgsForModel) {
+    const candidates = [config.AGY_MODEL, ...(config.AGY_FALLBACK_MODELS || [])].filter(
+      (m, idx, arr) => m && arr.indexOf(m) === idx
+    );
+
+    let lastErr = null;
+    for (let i = 0; i < candidates.length; i++) {
+      const modelName = candidates[i];
+      // On fallback attempt after a failure, omit stale conversation_id in case the prior model locked it
+      const includeConversation = i === 0;
+      try {
+        const result = await this._spawnAgyBinary(sessionKey, buildArgsForModel(modelName, includeConversation));
+        return { result, modelUsed: modelName };
+      } catch (err) {
+        lastErr = err;
+        console.warn(`[AgySessionManager] Model "${modelName}" failed (${err.message}). Trying next model if available...`);
+      }
+    }
+    throw lastErr || new Error('All agy models failed');
   }
 
   _spawnAgyBinary(pinId, args) {

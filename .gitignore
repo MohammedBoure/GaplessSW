@@ -6,5 +6,6 @@ uploads/*
 !uploads/.gitkeep
 sandbox_env/.agents/
 sandbox_env/GEMINI.md
+sandbox_env/projects_tree/
 .env
 *.log
